@@ -1,0 +1,242 @@
+{
+  "url_a_workflow": {
+    "What is this website about?": {
+      "answer": "**Brevo CRM Suite**  \nThe website describes Brevo as an all\u2011in\u2011one customer relationship management (CRM) platform that ...",
+      "citations_count": 8,
+      "citations": [
+        "Transactional Email Analytics",
+        "SMS Web Integration",
+        "Overview",
+        "Automation Triggers",
+        "IP Infrastructure Comparison",
+        "Workflow Actions",
+        "API Authentication",
+        "IP Warmup Rationale"
+      ],
+      "is_refusal": false
+    },
+    "What are its main features?": {
+      "answer": "**Main features of Brevo CRM Suite**\n\n- **All\u2011in\u2011one CRM platform** \u2013 combines marketing automation, transactional messa...",
+      "citations_count": 8,
+      "citations": [
+        "Transactional Email Analytics",
+        "IP Infrastructure Comparison",
+        "Overview",
+        "Automation Triggers",
+        "SMS Web Integration",
+        "Workflow Actions",
+        "IP Warmup Rationale",
+        "API Authentication"
+      ],
+      "is_refusal": false
+    },
+    "Explain one major feature in detail.": {
+      "answer": "**Transactional Email Tracking \u2013 a core feature of Brevo**\n\nBrevo\u2019s transactional email tracking lets developers monitor...",
+      "citations_count": 8,
+      "citations": [
+        "Transactional Email Analytics",
+        "Overview",
+        "Workflow Actions",
+        "IP Warmup Rationale",
+        "Automation Triggers",
+        "SMS Web Integration",
+        "API Authentication",
+        "IP Infrastructure Comparison"
+      ],
+      "is_refusal": false
+    },
+    "How does the feature work?": {
+      "answer": "**How Brevo\u2019s Automation Workflow Works**\n\n1. **Define a Trigger**  \n   - A behavioral event (e.g., a customer opens an ...",
+      "citations_count": 8,
+      "citations": [
+        "Workflow Actions",
+        "Automation Triggers",
+        "Overview",
+        "Transactional Email Analytics",
+        "SMS Web Integration",
+        "API Authentication",
+        "IP Warmup Rationale",
+        "IP Infrastructure Comparison"
+      ],
+      "is_refusal": false
+    },
+    "Why is it useful?": {
+      "answer": "IP warmup is useful because it helps establish a positive sender reputation with major mailbox providers.  \n- Major prov...",
+      "citations_count": 8,
+      "citations": [
+        "IP Warmup Rationale",
+        "Transactional Email Analytics",
+        "Overview",
+        "Workflow Actions",
+        "SMS Web Integration",
+        "IP Infrastructure Comparison",
+        "API Authentication",
+        "Automation Triggers"
+      ],
+      "is_refusal": false
+    }
+  },
+  "url_b_workflow": {
+    "What is this website about?": {
+      "answer": "The website is the official Kubernetes documentation page that explains **Kubernetes architecture**. It covers how the c...",
+      "citations_count": 3,
+      "citations": [
+        "Control Plane Components",
+        "Worker Node Agents",
+        "Cluster Overview"
+      ],
+      "is_refusal": false
+    },
+    "What are its main features?": {
+      "answer": "**Main features of the Kubernetes control plane and its components**\n\n| Feature | Description (documented in the indexed...",
+      "citations_count": 3,
+      "citations": [
+        "Control Plane Components",
+        "Cluster Overview",
+        "Worker Node Agents"
+      ],
+      "is_refusal": false
+    },
+    "How does kubelet work?": {
+      "answer": "**How kubelet works**\n\n1. **Runs on every worker node** \u2013 The kubelet is an agent that is installed on each node in the ...",
+      "citations_count": 3,
+      "citations": [
+        "Worker Node Agents",
+        "Cluster Overview",
+        "Control Plane Components"
+      ],
+      "is_refusal": false
+    },
+    "Explain kube-apiserver step-by-step.": {
+      "answer": "**Step\u2011by\u2011step explanation of the kube\u2011apiserver**\n\n1. **Acts as the control\u2011plane front end** \u2013 The kube\u2011apiserver is t...",
+      "citations_count": 3,
+      "citations": [
+        "Control Plane Components",
+        "Worker Node Agents",
+        "Cluster Overview"
+      ],
+      "is_refusal": false
+    },
+    "Why is the control plane useful?": {
+      "answer": "The control plane is useful because it **orchestrates and maintains the entire Kubernetes cluster**:\n\n| What the control...",
+      "citations_count": 3,
+      "citations": [
+        "Control Plane Components",
+        "Cluster Overview",
+        "Worker Node Agents"
+      ],
+      "is_refusal": false
+    }
+  },
+  "isolation_checks": {
+    "zero_url_a_leakage": true
+  },
+  "cache_isolation": {
+    "distinct_keys": true
+  },
+  "deep_question_matrix": {
+    "A_BASIC": {
+      "question": "What is Brevo CRM?",
+      "is_refusal": false,
+      "citations": 7,
+      "status": "PASS"
+    },
+    "B_DEFINITION": {
+      "question": "What is transactional email tracking?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "C_HOW": {
+      "question": "How does SMS connect to another website?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "D_WHY": {
+      "question": "Why is IP warmup critical for dedicated IPs?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "E_PROCESS": {
+      "question": "Explain how the automation workflow executes step-by-step.",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "F_COMPARISON": {
+      "question": "Compare dedicated IP versus shared IP.",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "G_CAUSE_EFFECT": {
+      "question": "What happens when a customer opens an order-confirmation email?",
+      "is_refusal": false,
+      "citations": 7,
+      "status": "PASS"
+    },
+    "H_MULTI_PART": {
+      "question": "What is Brevo, how does SMS connect to another website, and why is IP warmup needed?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "I_CROSS_SECTION": {
+      "question": "How can a customer opening an email lead to an automated follow-up?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "J_CONDITIONAL": {
+      "question": "If a customer completes a checkout transaction on an e-commerce website, what does the system do?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "K_TEMPORAL": {
+      "question": "What happens after an automation trigger occurs in Brevo?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "L_PARAPHRASED": {
+      "question": "In what manner can programmers oversee transactional dispatch outcomes and click-through statistics?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "M_TYPO": {
+      "question": "how the smss autometion triger works for confiramtion?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "N_LONG_QUESTION": {
+      "question": "Given that high email deliverability is required for critical customer notifications, how does Brevo combine API authentication security with transactional email performance metrics and webhook notifications to verify message arrival?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "O_MULTI_EVIDENCE": {
+      "question": "How do API authentication, tracking analytics, and SMS work together for external integrations?",
+      "is_refusal": false,
+      "citations": 8,
+      "status": "PASS"
+    },
+    "P_UNSUPPORTED": {
+      "question": "What is the orbital velocity and radius of Jupiter's moon Europa?",
+      "is_refusal": true,
+      "citations": 0,
+      "status": "PASS"
+    }
+  },
+  "chart_validation": {
+    "no_data_rejected": true,
+    "real_data_accepted": true
+  },
+  "citation_validation": {},
+  "error_recovery": {},
+  "regression": {}
+}

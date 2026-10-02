@@ -1,0 +1,28 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables & secrets
+.env
+.env.local
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Local data & vector store persistence (keep directory structure with .gitkeep)
+data/*
+!data/.gitkeep
+vectorstore/*
+!vectorstore/.gitkeep
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
