@@ -1,23 +1,29 @@
-"""DocuMind AI - Enterprise Document & Web Intelligence Workspace.
+"""DocuMind AI Assistant - Exact Stitch UI Replication.
 
-Features:
-- Global Knowledge Base (PDFs + Webpages in unified FAISS)
-- Complete URL Analysis Session Isolation (Zero cross-contamination between URLs)
-- New Result Page with Dedicated Source Header
-- Structured Output Cards: Summary, Key Insights, Links, Other Info, AI Charts, Citations
-- Strict AI Chart Validation: NO DATA = NO CHART (source-verified numeric data only)
-- Clean, User-Focused Home Page (no developer jargon or technical internals)
-- Source-Scoped Q&A for Webpages and Cross-Source Global Chat
+1:1 Direct Reproduction of the Stitch-generated UI (Dual Page UI Replicator):
+- Stitch Left Sidebar (320px width, #121417 in dark / #FAFAFA in light):
+  * + New Chat button (12px rounded-xl, 42px height, exact Stitch colors)
+  * Search chats... input (dark #1a1d21 / light #ffffff, rounded-lg/xl)
+  * RECENTS section with clean session history or "No recent conversations."
+  * Pinned User Profile at the absolute bottom (Rose avatar DP, Daya Purnavi, no Patient label)
+- Stitch Main Area (#0a0b0d in dark / #ffffff in light):
+  * Clean Top Navbar with theme toggle (☀️ / 🌙) and engine settings (⚙️)
+  * Center Hero section: "Where should we start?" + "Ask questions about your uploaded documents or attach medical records below."
+  * Conversational chat messages with user bubbles and assistant responses + citations
+- Stitch Bottom Dock:
+  * Pill container (#16181d / #FBFBFC, 16px rounded-2xl, shadow-xl)
+  * Document upload (+) attachment inside chat input
+  * Models selector chip popover
+  * Grok API key chip popover with emerald status indicator
+  * Lavender circular send button with purple arrow
 """
 
 import html
 import os
 import re
 import time
-import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-import pandas as pd
 import streamlit as st
 
 from src.config import (
@@ -31,29 +37,12 @@ from src.config import (
     update_groq_api_key,
 )
 from src.pdf_processor import process_pdf_files, chunk_documents
-from src.web_processor import (
-    process_web_url,
-    validate_and_normalize_url,
-    WebProcessingError,
-    SSRFSecurityError,
-)
-from src.youtube_processor import (
-    process_youtube_url,
-    detect_source_type,
-    normalize_youtube_url,
-    extract_youtube_video_id,
-    YouTubeProcessingError,
-)
 from src.embeddings import get_embedding_model
 from src.vector_store import (
-    build_vector_store,
     add_documents_to_vector_store,
-    remove_source_from_vector_store,
     save_vector_store,
     load_vector_store,
     clear_persisted_vector_store,
-    validate_vector_store,
-    retrieve_relevant_chunks,
 )
 from src.source_registry import (
     compute_content_hash,
@@ -61,477 +50,109 @@ from src.source_registry import (
     register_source,
     unregister_source_by_name_or_hash,
     list_registered_sources,
-    get_source_by_url,
-    is_url_indexed,
-    has_url_content_changed,
 )
-from src.rag_chain import query_rag_pipeline, REFUSAL_PHRASE, sanitize_final_response, RAG_PIPELINE_VERSION
-from src.structured_analysis import (
-    generate_structured_website_analysis,
-    validate_analysis_session,
-    detect_and_extract_charts,
+from src.rag_chain import (
+    query_rag_pipeline,
+    REFUSAL_PHRASE,
+    sanitize_final_response,
+    RAG_PIPELINE_VERSION,
 )
 
-# Page Configuration
+# Page Configuration - Sidebar Always Expanded for Two-Column Layout
 st.set_page_config(
-    page_title="DocuMind AI — Workspace",
-    page_icon="📄",
+    page_title="DocuMind AI Assistant",
+    page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# --- COMPLETE DESIGN SYSTEM CSS ---
-STITCH_COMPLETE_CSS = """
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-<style>
-    /* 1. HIDE ALL DEFAULT STREAMLIT CHROME COMPLETELY */
-    #MainMenu { visibility: hidden !important; }
-    header[data-testid="stHeader"] { background: transparent !important; }
-    footer { visibility: hidden !important; }
-    div[data-testid="stDecoration"] { display: none !important; }
-    div[data-testid="stToolbar"] { visibility: hidden !important; }
-    
-    /* 2. BASE THEME & TYPOGRAPHY */
-    html, body, .stApp {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
-        color: #131b2e !important;
-        background-color: #faf8ff !important;
-    }
+# --- SESSION STATE INITIALIZATION & STATE HANDLING ---
+def init_session_state():
+    if "theme" not in st.session_state:
+        st.session_state.theme = "dark"
+    if "workspace_name" not in st.session_state:
+        st.session_state.workspace_name = "DocuMind AI Assistant"
+    if "user_name" not in st.session_state:
+        st.session_state.user_name = "Daya Purnavi"
+    if "groq_api_key" not in st.session_state:
+        st.session_state.groq_api_key = GROQ_API_KEY if is_groq_configured(GROQ_API_KEY) else ""
+    if "selected_model" not in st.session_state:
+        st.session_state.selected_model = (
+            GROQ_MODEL
+            if GROQ_MODEL in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+            else "openai/gpt-oss-20b"
+        )
+    if "top_k" not in st.session_state:
+        st.session_state.top_k = DEFAULT_TOP_K
+    if "answer_mode" not in st.session_state or st.session_state.answer_mode == "STRICT_SOURCE":
+        st.session_state.answer_mode = "SOURCE_FIRST_WITH_FALLBACK"
+    if "debug_mode" not in st.session_state:
+        st.session_state.debug_mode = False
+    if "vector_store" not in st.session_state:
+        st.session_state.vector_store = None
+    if "query_cache" not in st.session_state:
+        st.session_state.query_cache = {}
+    if "queued_prompt" not in st.session_state:
+        st.session_state.queued_prompt = None
+    if "chat_sessions" not in st.session_state:
+        st.session_state.chat_sessions = {}
+    if "current_session_id" not in st.session_state:
+        st.session_state.current_session_id = None
+    if "active_documents" not in st.session_state:
+        st.session_state.active_documents = []
+    if "mobile_sidebar_open" not in st.session_state:
+        st.session_state.mobile_sidebar_open = False
 
-    
-    /* 3. SIDEBAR COMPLETE STITCH RESTYLING */
-    section[data-testid="stSidebar"] {
-        background-color: #ffffff !important;
-        border-right: 1px solid #eaedff !important;
-        box-shadow: 0 1px 12px rgba(15, 23, 42, 0.04) !important;
-        width: 330px !important;
-    }
-    section[data-testid="stSidebar"] > div:first-child {
-        padding: 1.25rem 1.1rem 2rem 1.1rem !important;
-    }
-    
-    /* 4. MAIN CANVAS CONTAINER RESET */
-    .main {
-        background-color: #faf8ff !important;
-    }
-    .main .block-container {
-        max-width: 1560px !important;
-        padding-top: 1.25rem !important;
-        padding-bottom: 5rem !important;
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
-    }
-    
-    /* 5. BRAND HEADER & LOGO */
-    .stitch-brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 1.25rem;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid #eaedff;
-    }
-    .stitch-logo-badge {
-        width: 42px;
-        height: 42px;
-        border-radius: 12px;
-        background: linear-gradient(135deg, #4338ca, #712ae2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #ffffff;
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 800;
-        font-size: 1.25rem;
-        box-shadow: 0 2px 8px rgba(67, 56, 202, 0.3);
-    }
-    .stitch-title-block {
-        display: flex;
-        flex-direction: column;
-    }
-    .stitch-brand-name {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 800;
-        font-size: 1.2rem;
-        color: #131b2e;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .stitch-version-chip {
-        font-size: 0.72rem;
-        font-weight: 600;
-        padding: 2px 6px;
-        background: #eaedff;
-        color: #4338ca;
-        border-radius: 6px;
-        font-family: 'Geist', sans-serif;
-    }
-    .stitch-brand-subtitle {
-        font-size: 0.78rem;
-        color: #64748b;
-        font-family: 'Geist', sans-serif;
-        font-weight: 500;
-    }
-    
-    /* 6. TOP WORKSPACE HEADER & BREADCRUMBS */
-    .stitch-top-header {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(16px);
-        border: 1px solid #eaedff;
-        border-radius: 16px;
-        padding: 0.85rem 1.5rem;
-        margin-bottom: 1.25rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
-    }
-    .stitch-breadcrumbs {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-family: 'Geist', sans-serif;
-        font-size: 0.88rem;
-        color: #64748b;
-    }
-    .stitch-breadcrumbs-active {
-        color: #4338ca;
-        font-weight: 600;
-    }
-    
-    /* 7. CLEAN HOME PAGE STYLING */
-    .home-hero-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%);
-        border: 1px solid #eaedff;
-        border-radius: 18px;
-        padding: 2.2rem 2.5rem;
-        margin-bottom: 1.75rem;
-        box-shadow: 0 4px 20px rgba(67, 56, 202, 0.05);
-    }
-    .home-hero-title {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 2rem;
-        font-weight: 800;
-        color: #131b2e;
-        margin-bottom: 0.4rem;
-        letter-spacing: -0.02em;
-    }
-    .home-hero-tagline {
-        font-size: 1.05rem;
-        color: #4338ca;
-        font-weight: 600;
-        margin-bottom: 0.6rem;
-    }
-    .home-hero-desc {
-        font-size: 0.92rem;
-        color: #64748b;
-        max-width: 800px;
-        line-height: 1.55;
-    }
-    
-    .metrics-container {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 16px;
-        margin-bottom: 1.75rem;
-    }
-    .metric-pill {
-        background: #ffffff;
-        border: 1px solid #eaedff;
-        border-radius: 14px;
-        padding: 1.1rem 1.4rem;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.02);
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-    .metric-pill:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 14px rgba(67, 56, 202, 0.08);
-        border-color: #cbd5e1;
-    }
-    .metric-icon-box {
-        width: 46px;
-        height: 46px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.4rem;
-    }
-    .metric-value {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 1.6rem;
-        font-weight: 800;
-        color: #131b2e;
-        line-height: 1.1;
-    }
-    .metric-label {
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: #64748b;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        font-family: 'Geist', sans-serif;
-    }
-    
-    /* 8. STRUCTURED ANALYSIS RESULT PAGE CARDS */
-    .page-source-header {
-        background: #ffffff;
-        border: 1px solid #eaedff;
-        border-left: 5px solid #4338ca;
-        border-radius: 16px;
-        padding: 1.3rem 1.75rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
-    }
-    .source-header-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 0.5rem;
-    }
-    .source-badge {
-        font-family: 'Geist', sans-serif;
-        font-size: 0.76rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #4338ca;
-        background: #eef2ff;
-        padding: 3px 8px;
-        border-radius: 6px;
-    }
-    .status-badge-ready {
-        font-family: 'Geist', sans-serif;
-        font-size: 0.76rem;
-        font-weight: 700;
-        color: #0d9488;
-        background: #f0fdf4;
-        padding: 3px 8px;
-        border-radius: 9999px;
-        border: 1px solid #ccfbf1;
-    }
-    .source-header-title {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-size: 1.45rem;
-        font-weight: 800;
-        color: #131b2e;
-        margin: 0.2rem 0 0.5rem 0;
-    }
-    .source-header-meta {
-        font-size: 0.85rem;
-        color: #64748b;
-        display: flex;
-        gap: 12px;
-        align-items: center;
-    }
-    .source-header-meta a {
-        color: #4338ca;
-        text-decoration: underline;
-        font-weight: 600;
-    }
-    
-    .structured-card {
-        background: #ffffff;
-        border: 1px solid #eaedff;
-        border-radius: 14px;
-        padding: 1.3rem 1.6rem;
-        margin-bottom: 1.25rem;
-        box-shadow: 0 1px 6px rgba(15, 23, 42, 0.03);
-    }
-    .card-header-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 0.9rem;
-        padding-bottom: 0.65rem;
-        border-bottom: 1px solid #f1f5f9;
-    }
-    .card-title-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 700;
-        font-size: 1.05rem;
-        color: #131b2e;
-    }
-    .card-footer-scope {
-        margin-top: 1rem;
-        padding-top: 0.65rem;
-        border-top: 1px solid #f8fafc;
-        font-size: 0.78rem;
-        color: #64748b;
-        font-family: 'Geist', sans-serif;
-    }
-    .card-footer-scope a {
-        color: #4338ca;
-        font-weight: 600;
-        text-decoration: none;
-    }
-    
-    .insight-bullet-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        margin-bottom: 0.65rem;
-        font-size: 0.92rem;
-        color: #334155;
-        line-height: 1.5;
-    }
-    .insight-dot {
-        color: #4338ca;
-        font-weight: 800;
-        font-size: 1.1rem;
-        line-height: 1.2;
-    }
-    
-    .link-chip-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 10px;
-    }
-    .link-chip {
-        background: #f8fafc;
-        border: 1px solid #eaedff;
-        border-radius: 10px;
-        padding: 0.65rem 0.9rem;
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        text-decoration: none !important;
-        transition: all 0.15s ease;
-    }
-    .link-chip:hover {
-        background: #ffffff;
-        border-color: #cbd5e1;
-        box-shadow: 0 2px 8px rgba(67, 56, 202, 0.08);
-    }
-    .link-chip-text {
-        font-size: 0.88rem;
-        font-weight: 600;
-        color: #4338ca;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .link-chip-url {
-        font-size: 0.74rem;
-        color: #64748b;
-        font-family: 'Geist', sans-serif;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    
-    .meta-chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-    .meta-tag-pill {
-        background: #f1f5f9;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 4px 10px;
-        font-size: 0.8rem;
-        color: #475569;
-        font-family: 'Geist', sans-serif;
-    }
-    
-    .source-citation-card {
-        background: #f8fafc;
-        border: 1px solid #eaedff;
-        border-left: 4px solid #4338ca;
-        border-radius: 10px;
-        padding: 0.85rem 1rem;
-        margin-bottom: 0.75rem;
-    }
-    
-    /* 9. CHAT STYLING */
-    .user-msg-row {
-        display: flex;
-        justify-content: flex-end;
-        align-items: flex-start;
-        gap: 12px;
-        margin-bottom: 1.25rem;
-    }
-    .user-msg-bubble {
-        background: #4338ca;
-        color: #ffffff;
-        border-radius: 16px 16px 2px 16px;
-        padding: 0.9rem 1.2rem;
-        font-size: 0.92rem;
-        line-height: 1.5;
-        box-shadow: 0 2px 8px rgba(67, 56, 202, 0.25);
-    }
-    .ai-msg-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        margin-bottom: 1.25rem;
-    }
-    .ai-msg-bubble {
-        background: #ffffff;
-        border: 1px solid #eaedff;
-        border-radius: 16px 16px 16px 2px;
-        padding: 1.1rem 1.35rem;
-        font-size: 0.92rem;
-        line-height: 1.55;
-        color: #1e293b;
-        box-shadow: 0 1px 6px rgba(15, 23, 42, 0.03);
-    }
-    
-    /* Button customizations */
-    div.stButton > button[kind="primary"] {
-        background: #4338ca !important;
-        color: #ffffff !important;
-        border-radius: 10px !important;
-        border: none !important;
-        font-weight: 600 !important;
-        padding: 0.55rem 1.25rem !important;
-        box-shadow: 0 2px 6px rgba(67, 56, 202, 0.25) !important;
-    }
-    div.stButton > button[kind="primary"]:hover {
-        background: #3730a3 !important;
-        box-shadow: 0 4px 12px rgba(67, 56, 202, 0.35) !important;
-    }
-    div.stButton > button:not([kind="primary"]) {
-        border-radius: 10px !important;
-        border: 1px solid #eaedff !important;
-        background: #ffffff !important;
-        color: #131b2e !important;
-        font-weight: 600 !important;
-    }
-    div.stButton > button:not([kind="primary"]):hover {
-        background: #f8fafc !important;
-        border-color: #cbd5e1 !important;
-    }
-    
-    .pulse-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #10b981;
-        display: inline-block;
-        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-        animation: pulse-ring 2s infinite cubic-bezier(0.66, 0, 0, 1);
-    }
-    @keyframes pulse-ring {
-        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-        70% { box-shadow: 0 0 0 7px rgba(16, 185, 129, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-    }
-</style>
-"""
+    # Restore persisted vector store and registered sources if available
+    if st.session_state.vector_store is None:
+        try:
+            persisted_vs = load_vector_store()
+            if persisted_vs is not None:
+                st.session_state.vector_store = persisted_vs
+        except Exception:
+            st.session_state.vector_store = None
 
-st.markdown(STITCH_COMPLETE_CSS, unsafe_allow_html=True)
+    # Sync active_documents from vector store or source registry
+    if not st.session_state.active_documents:
+        if st.session_state.vector_store is not None and hasattr(st.session_state.vector_store, "docstore") and hasattr(st.session_state.vector_store.docstore, "_dict"):
+            try:
+                seen_sources = set()
+                for doc in st.session_state.vector_store.docstore._dict.values():
+                    s_name = doc.metadata.get("title") or doc.metadata.get("source") or "Document"
+                    if s_name not in seen_sources:
+                        seen_sources.add(s_name)
+                        st.session_state.active_documents.append({
+                            "name": s_name,
+                            "source": s_name,
+                            "chunks": 1,
+                            "pages": doc.metadata.get("total_pages", 1),
+                        })
+            except Exception:
+                pass
+        if not st.session_state.active_documents:
+            try:
+                reg_sources = list_registered_sources()
+                for s in reg_sources:
+                    st.session_state.active_documents.append({
+                        "name": s.get("title") or s.get("source"),
+                        "source": s.get("source"),
+                        "chunks": s.get("chunk_count", 0),
+                        "pages": s.get("total_pages", 1),
+                    })
+            except Exception:
+                pass
+
+
+init_session_state()
+
+
+def clear_knowledge_base():
+    """Reset the vector database and source registry."""
+    clear_persisted_vector_store()
+    st.session_state.vector_store = None
+    st.session_state.query_cache = {}
+    st.session_state.active_documents = []
 
 
 def format_chat_bubble_html(raw_content: str) -> str:
@@ -549,1550 +170,1677 @@ def format_chat_bubble_html(raw_content: str) -> str:
         return f"<p>{escaped}</p>"
 
 
-def render_retrieval_debug_expander(debug_info: dict):
-    """Render retrieval diagnostics and evidence inspect panel when debug mode is enabled."""
-    if not debug_info or not isinstance(debug_info, dict):
-        return
-    with st.expander("🛠️ Retrieval Diagnostics & Evidence Inspector", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Question Type", debug_info.get("question_type", "N/A"))
-        c2.metric("Retrieval Relevance", debug_info.get("retrieval_relevance", "N/A"))
-        c3.metric("Answerability", debug_info.get("answerability", "N/A"))
-        c4.metric("Evidence State", debug_info.get("evidence_state", "N/A"))
+# --- THEME VARIABLES & EXACT STITCH DESIGN TOKENS ---
+is_dark = st.session_state.theme == "dark"
+is_mobile_open = st.session_state.get("mobile_sidebar_open", False)
 
-        c5, c6, c7, c8 = st.columns(4)
-        c5.metric("Candidates", debug_info.get("candidate_count", 0))
-        c6.metric("Context Chunks", debug_info.get("final_context_count", debug_info.get("total_context_chunks", 0)))
-        c7.metric("Fallback Used", str(debug_info.get("fallback_used", False)))
-        c8.metric("Fallback Source", str(debug_info.get("fallback_source", "None")))
+bg_app = "#0a0b0d" if is_dark else "#ffffff"
+bg_sidebar = "#121417" if is_dark else "#FAFAFA"
+sidebar_border = "#1e2227" if is_dark else "rgba(229, 231, 235, 0.8)"
+text_main = "#ffffff" if is_dark else "#111827"
+text_muted = "#a1a1aa" if is_dark else "#6b7280"
+hero_sub = "#d4d4d8" if is_dark else "#6b7280"
 
-        st.markdown(f"**Active Source:** `{debug_info.get('active_source', 'None')}`")
-        st.markdown(
-            f"**Source Answerable:** `{debug_info.get('source_answerable', False)}` | "
-            f"**LLM Called:** `{debug_info.get('llm_called', False)}` | "
-            f"**Refusal:** `{debug_info.get('is_refusal', False)}`"
-        )
-        if debug_info.get("refusal_reason"):
-            st.markdown(f"**Reason / Notes:** *{debug_info.get('refusal_reason')}*")
+new_chat_bg = "#1a1d22" if is_dark else "#ffffff"
+new_chat_border = "#2b3038" if is_dark else "rgba(229, 231, 235, 0.9)"
+new_chat_text = "#ffffff" if is_dark else "#1f2937"
+new_chat_hover = "#23272e" if is_dark else "#f9fafb"
 
-        if debug_info.get("neighbor_count", 0) > 0:
-            st.markdown(f"**Neighbor Chunks Expanded:** `{debug_info.get('neighbor_count', 0)}`")
+search_bg = "#1a1d21" if is_dark else "#ffffff"
+search_border = "#262a30" if is_dark else "rgba(229, 231, 235, 0.9)"
 
-        if debug_info.get("final_context_preview"):
-            st.markdown("**Top Context Snippets Sent to LLM:**")
-            for idx, snip in enumerate(debug_info.get("final_context_preview", [])[:3], 1):
-                st.code(snip, language="markdown")
+dock_bg = "#16181d" if is_dark else "#FBFBFC"
+dock_border = "#2b3038" if is_dark else "rgba(229, 231, 235, 0.8)"
+dock_shadow = "0 20px 25px -5px rgba(0, 0, 0, 0.5)" if is_dark else "0 2px 10px rgba(0, 0, 0, 0.04)"
+
+chip_bg = "#1f232b" if is_dark else "#ffffff"
+chip_border = "#2e3440" if is_dark else "rgba(229, 231, 235, 0.6)"
+chip_hover = "#282d37" if is_dark else "#f3f4f6"
+chip_text = "#e4e4e7" if is_dark else "#4b5563"
+
+chip_grok_bg = "#1a1d24" if is_dark else "#ffffff"
+chip_grok_border = "#2d323e" if is_dark else "rgba(229, 231, 235, 0.6)"
+chip_grok_hover = "#232731" if is_dark else "#f3f4f6"
+chip_grok_text = "#d4d4d8" if is_dark else "#4b5563"
+
+send_btn_bg = "#f1ebf9" if is_dark else "#EDE9FE"
+send_btn_hover = "#e7dcf5" if is_dark else "#E4DEFD"
+send_btn_icon = "#7c5fa6" if is_dark else "#7C3AED"
+
+user_bubble_bg = "#1a1d22" if is_dark else "#f3f4f6"
+user_bubble_border = "#2b3038" if is_dark else "#e5e7eb"
+user_bubble_text = "#f4f4f5" if is_dark else "#111827"
+
+CSS = f"""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+    /* ============================================================
+       SECTION 1 — NUKE ALL DEFAULT STREAMLIT CHROME
+       Remove every built-in Streamlit visual that is NOT in Stitch
+    ============================================================ */
+
+    /* Hide Streamlit header, footer, decoration, toolbar, collapse buttons */
+    #MainMenu,
+    footer,
+    header[data-testid="stHeader"],
+    [data-testid="stDecoration"],
+    [data-testid="stToolbar"],
+    [data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarHeader"],
+    [data-testid="stLogoSpacer"],
+    [data-testid="stSidebarResizeHandle"],
+    [data-testid="stAppDeployButton"],
+    [data-testid="stStatusWidget"] {{
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        width: 0 !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        pointer-events: none !important;
+    }}
+
+    /* Zero out ALL default Streamlit spacing/padding/margins */
+    html, body {{
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }}
+
+    html, body, .stApp {{
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+        background-color: {bg_app} !important;
+        color: {text_main} !important;
+        -webkit-font-smoothing: antialiased !important;
+        -moz-osx-font-smoothing: grayscale !important;
+    }}
+
+    /* Center the main block-container and match exactly with the bottom dock */
+    .main .block-container,
+    div[data-testid="stMainBlockContainer"],
+    .block-container {{
+        padding-top: 1.5rem !important;
+        padding-left: 1.5rem !important;
+        padding-right: 1.5rem !important;
+        padding-bottom: 14rem !important;
+        max-width: 820px !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+    }}
+
+    /* Remove default vertical gaps from stVerticalBlock and stElementContainer */
+    div[data-testid="stVerticalBlock"] {{
+        gap: 0 !important;
+    }}
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }}
+    div[data-testid="stElementContainer"] {{
+        margin: 0 !important;
+        padding: 0 !important;
+    }}
+
+    /* Remove default column borders and gaps */
+    div[data-testid="stHorizontalBlock"] {{
+        gap: 0 !important;
+        border: none !important;
+    }}
+    div[data-testid="column"] {{
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }}
+
+    /* ============================================================
+       SECTION 2 — STITCH EXACT TWO-COLUMN LAYOUT
+       DESKTOP (min-width: 769px): 320px fixed sidebar | remaining main canvas
+    ============================================================ */
+
+    @media (min-width: 769px) {{
+        section[data-testid="stSidebar"] {{
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            bottom: 0 !important;
+            width: 320px !important;
+            min-width: 320px !important;
+            max-width: 320px !important;
+            height: 100vh !important;
+            background-color: {bg_sidebar} !important;
+            border-right: 1px solid {sidebar_border} !important;
+            transform: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            visibility: visible !important;
+            display: flex !important;
+            flex-direction: column !important;
+            z-index: 100 !important;
+            overflow: hidden !important;
+            pointer-events: auto !important;
+        }}
+
+        /* Main area offset on desktop */
+        .stApp > .main,
+        section.stMain,
+        section[data-testid="stAppScrollToBottomContainer"],
+        section[data-testid="stMain"],
+        section.main {{
+            margin-left: 320px !important;
+            width: calc(100% - 320px) !important;
+            max-width: calc(100% - 320px) !important;
+            min-height: 100vh !important;
+            background-color: {bg_app} !important;
+            box-sizing: border-box !important;
+        }}
+
+        div[data-testid="stBottom"] {{
+            left: 320px !important;
+            width: calc(100% - 320px) !important;
+        }}
+
+        div.st-key-btn_mobile_open_sidebar,
+        div.st-key-btn_mobile_close_sidebar,
+        .mobile-sidebar-backdrop {{
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }}
+    }}
+
+    /* stSidebarContent — the Streamlit-generated wrapper: full height flex column */
+    div[data-testid="stSidebarContent"] {{
+        padding: 1rem !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+        box-sizing: border-box !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        background-color: {bg_sidebar} !important;
+        flex: 1 !important;
+    }}
+
+    /* stSidebarUserContent — user's rendered widgets */
+    div[data-testid="stSidebarUserContent"] {{
+        padding: 0 !important;
+        margin: 0 !important;
+        height: 100% !important;
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        min-height: 0 !important;
+    }}
+
+    /* The auto-generated wrapper div inside stSidebarUserContent that Streamlit
+       sets margin-top: 591px on — zero that out completely */
+    div[data-testid="stSidebarUserContent"] > div {{
+        margin: 0 !important;
+        padding: 0 !important;
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        height: 100% !important;
+        min-height: 0 !important;
+    }}
+
+    /* Vertical block inside sidebar fills full height as flex column */
+    div[data-testid="stSidebarUserContent"] div[data-testid="stVerticalBlock"] {{
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 0 !important;
+        width: 100% !important;
+        min-height: 0 !important;
+    }}
+
+    /* Each element container inside sidebar */
+    div[data-testid="stSidebarUserContent"] div[data-testid="stElementContainer"] {{
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }}
+
+    /* Profile box element container — auto margin pushes it to the very bottom */
+    div[data-testid="stSidebarUserContent"] div[data-testid="stElementContainer"]:has(.user-profile-box) {{
+        margin-top: auto !important;
+    }}
+
+    /* ============================================================
+       SECTION 3 — STITCH SIDEBAR COMPONENTS
+    ============================================================ */
+
+    /* New Chat button — full width, rounded-xl, 42px, exact Stitch colors */
+    div.st-key-btn_new_chat {{
+        width: 100% !important;
+        margin-bottom: 1rem !important;
+    }}
+    div.st-key-btn_new_chat button {{
+        background-color: {new_chat_bg} !important;
+        border: 1px solid {new_chat_border} !important;
+        border-radius: 12px !important;
+        color: {new_chat_text} !important;
+        font-weight: {'500' if is_dark else '600'} !important;
+        font-size: 0.875rem !important;
+        font-family: 'Inter', system-ui, sans-serif !important;
+        width: 100% !important;
+        height: 42px !important;
+        padding: 0 1rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        box-sizing: border-box !important;
+        box-shadow: {'none' if is_dark else '0 1px 2px rgba(0,0,0,0.03)'} !important;
+        transition: background-color 0.15s ease, border-color 0.15s ease !important;
+    }}
+    div.st-key-btn_new_chat button::before {{
+        content: '';
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='{'white' if is_dark else '%231f2937'}' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M12 4v16m8-8H4'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-size: contain;
+        flex-shrink: 0;
+    }}
+    div.st-key-btn_new_chat button:hover {{
+        background-color: {new_chat_hover} !important;
+        border-color: {'#3f4654' if is_dark else '#d1d5db'} !important;
+    }}
+    div.st-key-btn_new_chat p {{
+        margin: 0 !important;
+        color: {new_chat_text} !important;
+        font-weight: inherit !important;
+    }}
+
+    /* Search input — Stitch rounded-lg/xl, exact dark/light bg */
+    div.st-key-search_chats_input {{
+        width: 100% !important;
+        margin-bottom: 1rem !important;
+    }}
+    div.st-key-search_chats_input div[data-baseweb="base-input"] {{
+        position: relative !important;
+        background-color: {search_bg} !important;
+        border: 1px solid {search_border} !important;
+        border-radius: {'8px' if is_dark else '12px'} !important;
+    }}
+    div.st-key-search_chats_input div[data-baseweb="base-input"]::before {{
+        content: '';
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 16px;
+        height: 16px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='{'%2371717a' if is_dark else '%239ca3af'}' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-size: contain;
+        pointer-events: none;
+        z-index: 2;
+    }}
+    div.st-key-search_chats_input,
+    div.st-key-search_chats_input > div,
+    div.st-key-search_chats_input > div > div,
+    div.st-key-search_chats_input div[data-baseweb="input"] {{
+        background-color: {search_bg} !important;
+        border-radius: {'8px' if is_dark else '12px'} !important;
+        border: none !important;
+    }}
+    div.st-key-search_chats_input input {{
+        background-color: {search_bg} !important;
+        border: none !important;
+        border-radius: {'8px' if is_dark else '12px'} !important;
+        color: {text_main} !important;
+        font-size: 0.875rem !important;
+        font-family: 'Inter', system-ui, sans-serif !important;
+        width: 100% !important;
+        height: 38px !important;
+        padding: 0 0.85rem 0 38px !important;
+        box-sizing: border-box !important;
+        outline: none !important;
+        box-shadow: none !important;
+    }}
+    div.st-key-search_chats_input input::placeholder {{
+        color: {'#71717a' if is_dark else '#9ca3af'} !important;
+        opacity: 1 !important;
+    }}
+    div.st-key-search_chats_input input:focus {{
+        outline: none !important;
+        box-shadow: none !important;
+    }}
+
+    /* RECENTS header */
+    .recents-header {{
+        font-size: {'0.75rem' if is_dark else '0.6875rem'};
+        font-weight: {'600' if is_dark else '700'};
+        color: {'#a1a1aa' if is_dark else '#9ca3af'};
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 1rem 0 0.75rem 0;
+        padding-left: 0.25rem;
+        display: block;
+    }}
+    .empty-recents-text {{
+        font-size: 0.875rem;
+        color: {'#a1a1aa' if is_dark else '#6b7280'};
+        padding-left: 0.25rem;
+        font-weight: 400;
+        display: block;
+    }}
+
+    /* Explicit margins between sidebar elements for clean rhythm */
+    div[data-testid="stSidebarUserContent"] div[data-testid="stElementContainer"]:has(div.st-key-btn_new_chat) {{
+        margin-bottom: 12px !important;
+    }}
+    div[data-testid="stSidebarUserContent"] div[data-testid="stElementContainer"]:has(div.st-key-search_chats_input) {{
+        margin-bottom: 16px !important;
+    }}
+    div[data-testid="stSidebarUserContent"] div[data-testid="stElementContainer"]:has(.recents-header) {{
+        margin-top: 6px !important;
+        margin-bottom: 8px !important;
+    }}
+
+    /* Session buttons inside sidebar */
+    [data-testid="stSidebar"] div[class*="st-key-session_btn_"] button,
+    section[data-testid="stSidebar"] div[class*="st-key-session_btn_"] button {{
+        background-color: {new_chat_bg} !important;
+        border: 1px solid {new_chat_border} !important;
+        color: {text_main} !important;
+        text-align: left !important;
+        justify-content: flex-start !important;
+        font-size: 0.8125rem !important;
+        font-family: 'Inter', system-ui, sans-serif !important;
+        padding: 6px 10px !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        width: 100% !important;
+        height: 38px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        transition: background-color 0.15s ease, border-color 0.15s ease !important;
+    }}
+    [data-testid="stSidebar"] div[class*="st-key-session_btn_"] button:hover,
+    section[data-testid="stSidebar"] div[class*="st-key-session_btn_"] button:hover {{
+        background-color: {new_chat_hover} !important;
+        border-color: {'#3f4654' if is_dark else '#d1d5db'} !important;
+    }}
+    [data-testid="stSidebar"] div[class*="st-key-session_btn_act_"] button,
+    section[data-testid="stSidebar"] div[class*="st-key-session_btn_act_"] button {{
+        background-color: {'#232730' if is_dark else '#ebeef2'} !important;
+        border: 1px solid {'#3b4252' if is_dark else '#d1d5db'} !important;
+        color: {'#ffffff' if is_dark else '#111827'} !important;
+        font-weight: 600 !important;
+    }}
+    [data-testid="stSidebar"] div[class*="st-key-del_session_"] button,
+    section[data-testid="stSidebar"] div[class*="st-key-del_session_"] button {{
+        background-color: transparent !important;
+        border: 1px solid transparent !important;
+        color: {'#71717a' if is_dark else '#9ca3af'} !important;
+        font-size: 0.75rem !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        width: 100% !important;
+        height: 38px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
+        transition: all 0.15s ease !important;
+    }}
+    [data-testid="stSidebar"] div[class*="st-key-del_session_"] button:hover,
+    section[data-testid="stSidebar"] div[class*="st-key-del_session_"] button:hover {{
+        color: #ef4444 !important;
+        background-color: {'#2a1717' if is_dark else '#fee2e2'} !important;
+        border-color: {'#ef4444' if is_dark else '#fca5a5'} !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"]:has(div[class*="st-key-session_btn_"]) {{
+        gap: 6px !important;
+        align-items: center !important;
+        margin-bottom: 6px !important;
+    }}
+
+    /* User Profile — pinned at absolute bottom of sidebar */
+    div[data-testid="stSidebarUserContent"] > div:has(.user-profile-box) {{
+        margin-top: auto !important;
+        position: sticky !important;
+        bottom: 0 !important;
+        background-color: {bg_sidebar} !important;
+        z-index: 10 !important;
+        width: 100% !important;
+        padding-top: 0.5rem !important;
+    }}
+    .user-profile-box {{
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding: 0.75rem 0.25rem 0.25rem 0.25rem !important;
+        border-top: 1px solid transparent !important;
+        background-color: {bg_sidebar} !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }}
+    .avatar-circle {{
+        width: {'40px' if is_dark else '36px'} !important;
+        height: {'40px' if is_dark else '36px'} !important;
+        min-width: {'40px' if is_dark else '36px'} !important;
+        border-radius: 50% !important;
+        background-color: #e11d48 !important;
+        color: #ffffff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-weight: {'700' if is_dark else '600'} !important;
+        font-size: {'0.875rem' if is_dark else '0.75rem'} !important;
+        flex-shrink: 0 !important;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+    }}
+    .user-name {{
+        font-weight: 600 !important;
+        font-size: {'1rem' if is_dark else '0.875rem'} !important;
+        color: {text_main} !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        letter-spacing: {'normal' if is_dark else '-0.01em'} !important;
+    }}
+
+    /* ============================================================
+       SECTION 4 — STITCH MAIN CANVAS CONTROLS
+       Theme + settings buttons — positioned top-right, hidden by default
+       (Not in Stitch UI — appears only on hover for functionality)
+    ============================================================ */
+
+    /* The st.columns navbar row — shrink it to zero height */
+    div.st-key-btn_theme,
+    div.st-key-btn_settings {{
+        position: fixed !important;
+        top: 12px !important;
+        z-index: 200 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 36px !important;
+        height: 36px !important;
+        opacity: 0 !important;
+        transition: opacity 0.2s ease !important;
+    }}
+    div.st-key-btn_theme:hover,
+    div.st-key-btn_settings:hover {{
+        opacity: 1 !important;
+    }}
+    div.st-key-btn_theme {{
+        right: 56px !important;
+    }}
+    div.st-key-btn_settings {{
+        right: 12px !important;
+    }}
+    div.st-key-btn_theme button,
+    div.st-key-btn_settings button {{
+        background-color: {new_chat_bg} !important;
+        border: 1px solid {new_chat_border} !important;
+        border-radius: 8px !important;
+        color: {text_main} !important;
+        width: 36px !important;
+        height: 36px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 0.95rem !important;
+        box-shadow: none !important;
+        transition: background-color 0.15s ease !important;
+    }}
+    div.st-key-btn_theme button:hover,
+    div.st-key-btn_settings button:hover {{
+        background-color: {new_chat_hover} !important;
+        border-color: {'#3f4654' if is_dark else '#d1d5db'} !important;
+    }}
+    div.st-key-btn_theme p,
+    div.st-key-btn_settings p {{
+        margin: 0 !important;
+        font-size: 0.95rem !important;
+    }}
+
+    /* The containing navbar column row — collapse it completely */
+    div[data-testid="stHorizontalBlock"]:has(div.st-key-btn_theme),
+    div[data-testid="stHorizontalBlock"]:has(div.st-key-btn_settings) {{
+        height: 0 !important;
+        overflow: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        min-height: 0 !important;
+        border: none !important;
+    }}
+    div[data-testid="column"]:has(div.st-key-btn_theme),
+    div[data-testid="column"]:has(div.st-key-btn_settings),
+    div[data-testid="column"]:has(span[data-testid="stText"]) {{
+        height: 0 !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+    }}
+
+    /* ============================================================
+       SECTION 5 — STITCH CENTER HERO
+    ============================================================ */
+    .stitch-hero {{
+        text-align: center;
+        max-width: 672px;
+        margin: 4rem auto 2rem auto;
+        padding: 0 1rem;
+    }}
+    .stitch-hero-title {{
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: {'2.25rem' if is_dark else '2.125rem'} !important;
+        font-weight: 700 !important;
+        color: {text_main} !important;
+        letter-spacing: -0.025em !important;
+        margin-bottom: 0.75rem !important;
+        line-height: 1.2 !important;
+    }}
+    .stitch-hero-subtitle {{
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: {'1rem' if is_dark else '0.9375rem'} !important;
+        color: {hero_sub} !important;
+        line-height: 1.625 !important;
+        max-width: 520px !important;
+        margin: 0 auto !important;
+        font-weight: 400 !important;
+    }}
+
+    /* ============================================================
+       SECTION 6 — STITCH BOTTOM INPUT DOCK
+    ============================================================ */
+    div[data-testid="stBottom"] {{
+        left: 0 !important;
+        width: 100% !important;
+        background: {'rgba(10, 11, 13, 0.97)' if is_dark else 'rgba(255, 255, 255, 0.97)'} !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        padding-top: 14px !important;
+        padding-bottom: 24px !important;
+        border-top: 1px solid {'rgba(255, 255, 255, 0.06)' if is_dark else 'rgba(0, 0, 0, 0.06)'} !important;
+    }}
+    /* Streamlit inner wrapper with lavender/white auto-bg — force transparent */
+    div[data-testid="stBottom"] > div:first-child {{
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+    }}
+    div[data-testid="stBottomBlockContainer"] {{
+        position: relative !important;
+        max-width: 820px !important;
+        margin: 0 auto !important;
+        padding: 0 1.5rem !important;
+        background: transparent !important;
+        background-color: transparent !important;
+    }}
+    div[data-testid="stBottom"] div[data-testid="stVerticalBlock"] {{
+        gap: 6px !important;
+        background: transparent !important;
+    }}
+    div[data-testid="stBottom"] div[data-testid="stElementContainer"] {{
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }}
+    div[data-testid="stBottom"] div[data-testid="stLayoutWrapper"] {{
+        background: transparent !important;
+    }}
+    /* Horizontal block with Models & Grok API chips & Active Docs */
+    div[data-testid="stBottom"] div[data-testid="stHorizontalBlock"] {{
+        max-width: 820px !important;
+        margin: 0 auto 8px auto !important;
+        gap: 8px !important;
+        display: flex !important;
+        align-items: center !important;
+        background: transparent !important;
+    }}
+    div[data-testid="stBottom"] div[data-testid="column"],
+    div[data-testid="stBottom"] div[data-testid="stColumn"] {{
+        min-width: unset !important;
+        padding: 0 !important;
+        flex: 0 0 auto !important;
+        height: auto !important;
+        overflow: visible !important;
+        background: transparent !important;
+    }}
+
+    /* Models / Grok chip popovers */
+    div[data-testid="stPopover"] button {{
+        background-color: {chip_bg} !important;
+        border: 1px solid {chip_border} !important;
+        border-radius: 8px !important;
+        color: {chip_text} !important;
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.75rem !important;
+        font-weight: 500 !important;
+        padding: 2px 10px !important;
+        height: 28px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 5px !important;
+        box-shadow: none !important;
+        white-space: nowrap !important;
+        transition: background-color 0.15s ease !important;
+    }}
+    div[data-testid="stPopover"] button:hover {{
+        background-color: {chip_hover} !important;
+        border-color: {'#3b4252' if is_dark else '#d1d5db'} !important;
+        color: {'#ffffff' if is_dark else '#111827'} !important;
+    }}
+    div[data-testid="stPopover"] p {{
+        margin: 0 !important;
+        font-size: 0.75rem !important;
+        color: inherit !important;
+    }}
+
+    /* Active Document Fixed Pill in Question Bar */
+    div[class*="st-key-btn_rm_doc_"] button {{
+        background-color: {'#1c2027' if is_dark else '#f3f4f6'} !important;
+        border: 1px solid {'#2e3440' if is_dark else '#e5e7eb'} !important;
+        border-radius: 8px !important;
+        color: {'#e4e4e7' if is_dark else '#374151'} !important;
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.75rem !important;
+        font-weight: 500 !important;
+        padding: 2px 10px !important;
+        height: 28px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 6px !important;
+        box-shadow: none !important;
+        white-space: nowrap !important;
+        transition: all 0.15s ease !important;
+    }}
+    div[class*="st-key-btn_rm_doc_"] button:hover {{
+        background-color: {'#3b1818' if is_dark else '#fee2e2'} !important;
+        border-color: #ef4444 !important;
+        color: {'#fca5a5' if is_dark else '#b91c1c'} !important;
+    }}
+    div[class*="st-key-btn_rm_doc_"] p {{
+        margin: 0 !important;
+        font-size: 0.75rem !important;
+        color: inherit !important;
+    }}
+
+    /* Chat input pill — 16px rounded-2xl with clean margins and internal padding */
+    div[data-testid="stChatInput"] {{
+        border: 1px solid {dock_border} !important;
+        border-radius: 16px !important;
+        box-shadow: {dock_shadow} !important;
+        background: {dock_bg} !important;
+        transition: all 0.2s ease !important;
+        padding: 6px 14px !important;
+        margin-top: 4px !important;
+        margin-bottom: 6px !important;
+    }}
+    /* Override Streamlit's auto-generated inner div that gets white/lavender bg */
+    div[data-testid="stChatInput"] > div {{
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }}
+    div[data-testid="stChatInput"] div {{
+        background: transparent !important;
+        background-color: transparent !important;
+    }}
+    div[data-testid="stChatInput"]:focus-within {{
+        border-color: {'#52525b' if is_dark else '#d1d5db'} !important;
+    }}
+    div[data-testid="stChatInput"] textarea {{
+        font-family: 'Inter', system-ui, sans-serif !important;
+        font-size: 0.9375rem !important;
+        color: {text_main} !important;
+        padding: 8px 6px !important;
+        background: transparent !important;
+        border: none !important;
+        outline: none !important;
+    }}
+    div[data-testid="stChatInput"] textarea::placeholder {{
+        color: {'#71717a' if is_dark else '#9ca3af'} !important;
+    }}
+
+    /* Send button — lavender circle */
+    div[data-testid="stChatInput"] button[data-testid="stChatInputSubmitButton"],
+    div[data-testid="stChatInput"] button:last-child {{
+        background-color: {send_btn_bg} !important;
+        border-radius: {'9999px' if is_dark else '12px'} !important;
+        width: {'34px' if is_dark else '36px'} !important;
+        height: {'34px' if is_dark else '36px'} !important;
+        min-width: {'34px' if is_dark else '36px'} !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border: none !important;
+        box-shadow: none !important;
+        flex-shrink: 0 !important;
+        transition: background-color 0.15s ease !important;
+    }}
+    div[data-testid="stChatInput"] button[data-testid="stChatInputSubmitButton"]:hover,
+    div[data-testid="stChatInput"] button:last-child:hover {{
+        background-color: {send_btn_hover} !important;
+    }}
+    div[data-testid="stChatInput"] button[data-testid="stChatInputSubmitButton"] svg,
+    div[data-testid="stChatInput"] button:last-child svg {{
+        color: {send_btn_icon} !important;
+        fill: {send_btn_icon} !important;
+        stroke: {send_btn_icon} !important;
+    }}
+
+    /* Attach (+) button */
+    div[data-testid="stChatInput"] button:not([data-testid="stChatInputSubmitButton"]):first-of-type {{
+        color: {'#a1a1aa' if is_dark else '#9ca3af'} !important;
+        background: transparent !important;
+        border-radius: 8px !important;
+        padding: 4px !important;
+        transition: all 0.15s ease !important;
+    }}
+    div[data-testid="stChatInput"] button:not([data-testid="stChatInputSubmitButton"]):first-of-type:hover {{
+        color: {'#ffffff' if is_dark else '#1f2937'} !important;
+        background-color: {'#23272e' if is_dark else '#f3f4f6'} !important;
+    }}
+
+    /* Hide char counter */
+    div[data-testid="stChatInput"] [data-testid="stChatInputCharCounter"],
+    div[data-testid="stChatInput"] small {{
+        display: none !important;
+    }}
+
+    /* ============================================================
+       SECTION 7 — CHAT BUBBLES
+    ============================================================ */
+    .chat-container {{
+        display: flex;
+        flex-direction: column;
+        gap: 2.25rem;
+        margin-top: 1.5rem;
+        margin-bottom: 3.5rem;
+        padding-top: 1rem;
+        width: 100%;
+        max-width: 820px;
+        margin-left: auto;
+        margin-right: auto;
+        box-sizing: border-box;
+    }}
+    .user-msg-row {{
+        display: flex;
+        justify-content: flex-end;
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }}
+    .user-msg-bubble {{
+        background-color: {user_bubble_bg};
+        color: {user_bubble_text};
+        border: 1px solid {user_bubble_border};
+        border-radius: 18px 18px 4px 18px;
+        padding: 0.85rem 1.25rem;
+        font-size: 0.9375rem;
+        line-height: 1.55;
+        max-width: 82%;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+        word-wrap: break-word;
+        font-family: 'Inter', system-ui, sans-serif;
+    }}
+    .assistant-msg-row {{
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        gap: 12px;
+        padding: 0.25rem 0;
+    }}
+    .assistant-msg-bubble {{
+        background: transparent;
+        color: {text_main};
+        font-size: 0.95rem;
+        line-height: 1.7;
+        width: 100%;
+        font-family: 'Inter', system-ui, sans-serif;
+    }}
+    .action-icons-bar {{
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-top: 6px;
+        color: {text_muted};
+        font-size: 0.875rem;
+    }}
+    .action-icon {{
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.15s ease;
+        user-select: none;
+    }}
+    .action-icon:hover {{
+        opacity: 1;
+        color: {text_main};
+    }}
+    .citations-row {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed {sidebar_border};
+    }}
+    .citation-badge {{
+        background: {dock_bg};
+        color: {text_muted};
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 8px;
+        border: 1px solid {dock_border};
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: 'Inter', system-ui, sans-serif;
+    }}
+
+    /* ============================================================
+       SECTION 8 — RESPONSIVE (MOBILE & ANDROID RATIO)
+    ============================================================ */
+    @media (max-width: 768px) {{
+        /* Sidebar: sliding drawer overlay */
+        section[data-testid="stSidebar"],
+        section[data-testid="stSidebar"][aria-expanded="true"],
+        section[data-testid="stSidebar"][aria-expanded="false"] {{
+            position: fixed !important;
+            top: 0 !important;
+            left: {'0' if is_mobile_open else '-320px'} !important;
+            bottom: 0 !important;
+            width: 290px !important;
+            min-width: 290px !important;
+            max-width: 85vw !important;
+            height: 100vh !important;
+            background-color: {bg_sidebar} !important;
+            border-right: 1px solid {sidebar_border} !important;
+            transform: none !important;
+            transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            z-index: 10000 !important;
+            box-shadow: {'4px 0 28px rgba(0, 0, 0, 0.65)' if is_mobile_open else 'none'} !important;
+            pointer-events: {'auto' if is_mobile_open else 'none'} !important;
+            visibility: {'visible' if is_mobile_open else 'hidden'} !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }}
+
+        /* Mobile backdrop overlay */
+        .mobile-sidebar-backdrop {{
+            display: {'block' if is_mobile_open else 'none'} !important;
+            position: fixed !important;
+            inset: 0 !important;
+            background: rgba(0, 0, 0, 0.6) !important;
+            backdrop-filter: blur(4px) !important;
+            -webkit-backdrop-filter: blur(4px) !important;
+            z-index: 9999 !important;
+            cursor: pointer !important;
+        }}
+
+        /* Main canvas takes 100% full screen width */
+        .stApp > .main,
+        section.stMain,
+        section[data-testid="stAppScrollToBottomContainer"],
+        section[data-testid="stMain"],
+        section.main {{
+            margin-left: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            box-sizing: border-box !important;
+        }}
+
+        div[data-testid="stMainBlockContainer"],
+        .block-container {{
+            padding-left: 14px !important;
+            padding-right: 14px !important;
+            padding-top: 54px !important;
+            padding-bottom: 120px !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            left: 0 !important;
+            box-sizing: border-box !important;
+        }}
+
+        /* Hero typography on Android screens */
+        .stitch-hero {{
+            max-width: 100% !important;
+            margin: 2.5rem auto 1.5rem auto !important;
+            padding: 0 12px !important;
+        }}
+        .stitch-hero-title {{
+            font-size: 1.625rem !important; /* 26px */
+            line-height: 1.25 !important;
+            margin-bottom: 0.5rem !important;
+            word-wrap: break-word !important;
+        }}
+        .stitch-hero-subtitle {{
+            font-size: 0.875rem !important; /* 14px */
+            line-height: 1.45 !important;
+            max-width: 100% !important;
+        }}
+
+        /* Mobile Bottom Dock */
+        div[data-testid="stBottom"] {{
+            left: 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+            padding-bottom: 14px !important;
+            box-sizing: border-box !important;
+        }}
+        div[data-testid="stBottomBlockContainer"] {{
+            max-width: 100% !important;
+            padding: 0 !important;
+        }}
+        div[data-testid="stBottom"] div[data-testid="stHorizontalBlock"] {{
+            max-width: 100% !important;
+            padding: 0 2px !important;
+            gap: 6px !important;
+        }}
+        div[data-testid="stChatInput"] {{
+            max-width: 100% !important;
+            padding: 3px 8px !important;
+        }}
+        div[data-testid="stChatInput"] textarea {{
+            font-size: 0.875rem !important;
+        }}
+
+        /* Mobile open button at top-left */
+        div.st-key-btn_mobile_open_sidebar {{
+            position: fixed !important;
+            top: 10px !important;
+            left: 10px !important;
+            z-index: 998 !important;
+            display: block !important;
+            width: 36px !important;
+            height: 36px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }}
+        div.st-key-btn_mobile_open_sidebar button {{
+            background-color: {new_chat_bg} !important;
+            border: 1px solid {new_chat_border} !important;
+            border-radius: 8px !important;
+            color: {text_main} !important;
+            width: 36px !important;
+            height: 36px !important;
+            min-width: 36px !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 1.15rem !important;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease !important;
+        }}
+        div.st-key-btn_mobile_open_sidebar button:hover {{
+            background-color: {new_chat_hover} !important;
+        }}
+        div.st-key-btn_mobile_open_sidebar div,
+        div.st-key-btn_mobile_open_sidebar span,
+        div.st-key-btn_mobile_open_sidebar p {{
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin: 0 !important;
+            font-size: 1.15rem !important;
+            color: {text_main} !important;
+        }}
+
+        /* Mobile close button header inside sidebar */
+        div.st-key-btn_mobile_close_sidebar {{
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            width: 100% !important;
+            margin-bottom: 12px !important;
+            padding-bottom: 6px !important;
+            border-bottom: 1px solid {sidebar_border} !important;
+        }}
+        div.st-key-btn_mobile_close_sidebar::before {{
+            content: 'DocuMind AI' !important;
+            font-family: 'Inter', system-ui, sans-serif !important;
+            font-weight: 700 !important;
+            font-size: 0.95rem !important;
+            color: {text_main} !important;
+            letter-spacing: -0.01em !important;
+            display: flex !important;
+            align-items: center !important;
+        }}
+        div.st-key-btn_mobile_close_sidebar > div {{
+            display: flex !important;
+            justify-content: flex-end !important;
+            width: auto !important;
+            margin-left: auto !important;
+        }}
+        div.st-key-btn_mobile_close_sidebar button {{
+            background-color: transparent !important;
+            border: 1px solid {sidebar_border} !important;
+            border-radius: 8px !important;
+            color: {text_muted} !important;
+            width: 32px !important;
+            height: 32px !important;
+            min-width: 32px !important;
+            max-width: 32px !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 0.95rem !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease !important;
+        }}
+        div.st-key-btn_mobile_close_sidebar button:hover {{
+            color: {text_main} !important;
+            background-color: {new_chat_hover} !important;
+            border-color: {new_chat_border} !important;
+        }}
+        div.st-key-btn_mobile_close_sidebar div,
+        div.st-key-btn_mobile_close_sidebar span,
+        div.st-key-btn_mobile_close_sidebar p {{
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            margin: 0 !important;
+            font-size: 0.95rem !important;
+            color: {text_muted} !important;
+        }}
+
+        div.st-key-btn_theme {{
+            right: 52px !important;
+            top: 10px !important;
+            opacity: 0.8 !important;
+        }}
+        div.st-key-btn_settings {{
+            right: 10px !important;
+            top: 10px !important;
+            opacity: 0.8 !important;
+        }}
+    }}
+</style>
+"""
+
+st.markdown(CSS, unsafe_allow_html=True)
 
 
-# --- SESSION STATE INITIALIZATION ---
-def init_session_state():
-    """Ensure all required session state variables are initialized and restore persistent vector store."""
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "vector_store" not in st.session_state:
-        st.session_state.vector_store = None
-    if "kb_stats" not in st.session_state:
-        st.session_state.kb_stats = {
-            "processed": False,
-            "document_names": [],
-            "total_pages": 0,
-            "total_chunks": 0,
-            "file_size_kb": 0.0,
-            "embedding_model": EMBEDDING_MODEL_NAME,
-            "groq_model": GROQ_MODEL,
-        }
-    if "uploaded_file_fingerprint" not in st.session_state:
-        st.session_state.uploaded_file_fingerprint = ""
-    if "groq_api_key" not in st.session_state:
-        st.session_state.groq_api_key = GROQ_API_KEY if is_groq_configured(GROQ_API_KEY) else ""
-    if "selected_model" not in st.session_state:
-        st.session_state.selected_model = (
-            GROQ_MODEL
-            if GROQ_MODEL in ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
-            else "openai/gpt-oss-20b"
-        )
-    if "pending_query" not in st.session_state:
-        st.session_state.pending_query = None
 
-    # URL Analysis Isolation and Navigation
-    if "current_view" not in st.session_state:
-        st.session_state.current_view = "home"  # "home", "website_analysis", "knowledge_chat"
-    if "current_analysis" not in st.session_state:
-        st.session_state.current_analysis = None
-    if "analyses" not in st.session_state:
-        st.session_state.analyses = {}  # { normalized_url: analysis_dict }
-    if "active_url" not in st.session_state:
-        st.session_state.active_url = None
-    if "active_source_id" not in st.session_state:
-        st.session_state.active_source_id = None
-    if "active_source_url" not in st.session_state:
-        st.session_state.active_source_url = None
-    if "active_source_type" not in st.session_state:
-        st.session_state.active_source_type = None
-    if "active_source_hash" not in st.session_state:
-        st.session_state.active_source_hash = None
-    if "active_analysis_id" not in st.session_state:
-        st.session_state.active_analysis_id = None
-    if "query_cache" not in st.session_state:
-        st.session_state.query_cache = {}  # { (source_id, content_hash, normalized_q, mode, top_k): result }
+# --- GENERAL AI ANSWER GENERATOR ---
+def get_general_ai_answer(
+    question: str,
+    llm_model: Optional[str] = None,
+    api_key: Optional[str] = None,
+    has_docs: bool = False,
+) -> str:
+    """
+    Generate authoritative, comprehensive answers for any user question.
+    Answers general knowledge, machine learning (Deep Learning, NumPy, Scikit-learn, Pandas),
+    medical concepts, coding, workflows, and handles typos like 'pands' for 'pandas'.
+    """
+    from langchain_groq import ChatGroq
+    from langchain_core.messages import SystemMessage, HumanMessage
 
-    # Restore from persisted storage if vector_store is not yet loaded in session state
-    if st.session_state.vector_store is None:
-        try:
-            persisted_vs = load_vector_store()
-            if persisted_vs is not None:
-                st.session_state.vector_store = persisted_vs
-                registered = list_registered_sources()
-                if registered:
-                    doc_names = [s.get("source", "Document") for s in registered]
-                    total_pages = sum(s.get("total_pages") or 0 for s in registered)
-                    total_chunks = len(persisted_vs.docstore._dict)
-                else:
-                    doc_names = sorted(list({
-                        doc.metadata.get("source", "Document")
-                        for doc in persisted_vs.docstore._dict.values()
-                    }))
-                    total_chunks = len(persisted_vs.docstore._dict)
-                    total_pages = len({
-                        (doc.metadata.get("source"), doc.metadata.get("page"))
-                        for doc in persisted_vs.docstore._dict.values()
-                        if doc.metadata.get("page") is not None
-                    })
+    key = api_key or GROQ_API_KEY
+    model = llm_model or GROQ_MODEL
 
-                st.session_state.kb_stats = {
-                    "processed": True,
-                    "document_names": doc_names,
-                    "total_pages": total_pages,
-                    "total_chunks": total_chunks,
-                    "file_size_kb": 0.0,
-                    "embedding_model": EMBEDDING_MODEL_NAME,
-                    "groq_model": st.session_state.selected_model,
-                }
-        except Exception:
-            st.session_state.vector_store = None
-
-
-init_session_state()
-
-
-def clear_knowledge_base():
-    """Reset the vector database, clear cached indices, wipe source registry, and wipe chat history."""
-    clear_persisted_vector_store()
-    st.session_state.vector_store = None
-    st.session_state.messages = []
-    st.session_state.current_analysis = None
-    st.session_state.analyses = {}
-    st.session_state.active_url = None
-    st.session_state.active_source_id = None
-    st.session_state.active_source_url = None
-    st.session_state.active_source_type = None
-    st.session_state.active_analysis_id = None
-    st.session_state.query_cache = {}
-    st.session_state.current_view = "home"
-    st.session_state.kb_stats = {
-        "processed": False,
-        "document_names": [],
-        "total_pages": 0,
-        "total_chunks": 0,
-        "file_size_kb": 0.0,
-        "embedding_model": EMBEDDING_MODEL_NAME,
-        "groq_model": GROQ_MODEL,
-    }
-    st.session_state.uploaded_file_fingerprint = ""
-
-
-# --- SIDEBAR NAVIGATION & CONFIGURATION ---
-with st.sidebar:
-    # 1. Stitch Brand Identity
-    st.markdown(
-        """
-        <div class="stitch-brand">
-            <div class="stitch-logo-badge">D</div>
-            <div class="stitch-title-block">
-                <div class="stitch-brand-name">
-                    DocuMind AI
-                    <span class="stitch-version-chip">v2.5 Pro</span>
-                </div>
-                <div class="stitch-brand-subtitle">Knowledge Intelligence</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    system_prompt = (
+        "You are DocuMind AI, an expert, intelligent AI assistant.\n"
+        "Your task is to provide a clear, accurate, thorough, and well-structured answer to the user's question.\n"
+        "- Format using clean GitHub-flavored Markdown with bold headings, bullet points, and code snippets where helpful.\n"
+        "- If the user input contains typos (for example 'pands' for pandas, 'nump' for numpy, 'pytn' for python, 'scikit learn' for scikit-learn), "
+        "interpret the user's intended concept accurately and provide a complete, expert explanation.\n"
+        "- NEVER output raw HTML tags (such as <div>, <span>, <p>, <br>).\n"
+        "- Provide comprehensive explanations with key concepts, practical examples, and use cases.\n"
+        "- Be polite, professional, and directly address the user's query."
     )
 
-    # 2. View Switcher Navigation Rail
-    nav_options = ["🏠 Home", "🌐 Website Analysis", "💬 Global Chat"]
-    current_idx = 0
-    if st.session_state.current_view == "website_analysis":
-        current_idx = 1
-    elif st.session_state.current_view == "knowledge_chat":
-        current_idx = 2
+    try:
+        llm = ChatGroq(model=model, api_key=key, temperature=0.2, max_retries=3)
+        resp = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=question)])
+        raw_text = resp.content if hasattr(resp, "content") else str(resp)
+        return sanitize_final_response(raw_text)
+    except Exception as e:
+        return f"Unable to generate response at this time: {str(e)}"
 
-    chosen_nav = st.radio(
-        "Workspace View",
-        options=nav_options,
-        index=current_idx,
-        label_visibility="collapsed",
-        key="nav_view_selector",
+
+# --- WORKSPACE & ASSISTANT SETTINGS DIALOG ---
+@st.dialog("⚙️ Workspace & Engine Settings")
+def show_settings_dialog():
+    st.markdown("Configure your AI model, document grounding, Groq API key, and profile.")
+
+    # 1. Profile
+    st.markdown("##### 👤 User Profile")
+    u_name = st.text_input("Name", value=st.session_state.user_name)
+    if u_name.strip():
+        st.session_state.user_name = u_name.strip()
+
+    # 2. Document Upload Option Inside Settings
+    st.markdown("##### 📄 Knowledge Documents")
+    uploaded_docs = st.file_uploader(
+        "Upload Documents / Records",
+        type=["pdf", "docx", "txt", "md"],
+        accept_multiple_files=True,
+        help="Upload PDF, DOCX, TXT, MD, lab reports, or prescriptions.",
+        key="settings_doc_uploader",
     )
-    if chosen_nav == "🏠 Home" and st.session_state.current_view != "home":
-        st.session_state.current_view = "home"
-        st.rerun()
-    elif chosen_nav == "🌐 Website Analysis" and st.session_state.current_view != "website_analysis":
-        st.session_state.current_view = "website_analysis"
-        st.rerun()
-    elif chosen_nav == "💬 Global Chat" and st.session_state.current_view != "knowledge_chat":
-        st.session_state.current_view = "knowledge_chat"
-        st.rerun()
+    if uploaded_docs:
+        file_tuples = [(f.getvalue(), f.name, compute_content_hash(f.getvalue())) for f in uploaded_docs]
+        if st.button("⚡ Index Uploaded Documents", type="primary", use_container_width=True):
+            chunks, stats = process_pdf_files(file_tuples, chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+            if chunks:
+                embs = get_embedding_model()
+                st.session_state.vector_store = add_documents_to_vector_store(
+                    st.session_state.vector_store, chunks, embs
+                )
+                save_vector_store(st.session_state.vector_store)
+                for pf in stats["processed_files"]:
+                    st_type = "pdf" if pf["filename"].lower().endswith(".pdf") else "document"
+                    register_source(
+                        source=pf["filename"],
+                        source_type=st_type,
+                        title=pf["filename"],
+                        content_hash=pf.get("content_hash", ""),
+                        chunk_count=pf["chunks"],
+                        total_pages=pf["pages"],
+                        metadata={"indexed_at": datetime.now().isoformat()},
+                    )
+                    if not any(d.get("name") == pf["filename"] for d in st.session_state.active_documents):
+                        st.session_state.active_documents.append({
+                            "name": pf["filename"],
+                            "source": pf["filename"],
+                            "pages": pf.get("pages", 1),
+                            "chunks": pf.get("chunks", 0),
+                        })
+                st.toast(f"Successfully indexed {len(chunks)} chunks and pinned to question bar!", icon="✅")
+                st.rerun()
 
-    st.markdown("<hr style='border: none; border-top: 1px solid #eaedff; margin: 1.1rem 0;'>", unsafe_allow_html=True)
-
-    # 3. Groq API Configuration
-    st.markdown("#### 🔑 Groq API Engine")
-    current_saved_key = st.session_state.groq_api_key
-    user_api_key = st.text_input(
+    # 3. Groq API Engine
+    st.markdown("##### 🔑 Groq API Engine")
+    new_key = st.text_input(
         "Groq API Key",
-        value=current_saved_key,
+        value=st.session_state.groq_api_key,
         type="password",
         placeholder="gsk_...",
-        help="Get your free key from https://console.groq.com/keys",
-        label_visibility="collapsed",
+        help="Free API key from console.groq.com/keys",
     )
-    if user_api_key.strip() != current_saved_key:
-        st.session_state.groq_api_key = user_api_key.strip()
-        update_groq_api_key(user_api_key.strip())
-        st.rerun()
+    if new_key.strip() != st.session_state.groq_api_key:
+        st.session_state.groq_api_key = new_key.strip()
+        update_groq_api_key(new_key.strip())
+        st.toast("Groq API Key updated!", icon="🔑")
 
-    active_key = st.session_state.groq_api_key or GROQ_API_KEY
-    if not is_groq_configured(active_key):
-        st.warning(
-            "⚠️ **API Key Required**\n\n"
-            "Paste your Groq API key (`gsk_...`) above.\n\n"
-            "[👉 Get a free Groq Key](https://console.groq.com/keys)"
-        )
-    else:
-        model_options = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
-        selected_model = st.selectbox(
-            "Model",
-            options=model_options,
-            index=model_options.index(st.session_state.selected_model) if st.session_state.selected_model in model_options else 0,
-            help="Select the Groq model for question answering.",
-        )
-        st.session_state.selected_model = selected_model
-        st.caption(f"⚡ LLM: **Groq** (`{selected_model}`)")
+    # 4. Model Selector
+    st.markdown("##### ⚡ AI Model")
+    model_options = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+    idx = model_options.index(st.session_state.selected_model) if st.session_state.selected_model in model_options else 0
+    st.session_state.selected_model = st.selectbox("LLM Model", options=model_options, index=idx)
 
-    st.markdown("<hr style='border: none; border-top: 1px solid #eaedff; margin: 1.1rem 0;'>", unsafe_allow_html=True)
-
-    # 4. Document Library Manager (PDFs)
-    st.markdown("#### 📄 Document Library")
-    uploaded_files = st.file_uploader(
-        "Upload PDF Document(s)",
-        type=["pdf"],
-        accept_multiple_files=True,
-        help="Upload one or multiple PDF documents to build your semantic knowledge base.",
-        label_visibility="collapsed",
-    )
-
-    duplicate_files = []
-    new_files = []
-    file_info_map = {}
-
-    if uploaded_files:
-        total_size_kb = sum(len(f.getvalue()) for f in uploaded_files) / 1024
-        st.caption(f"📁 {len(uploaded_files)} file(s) attached ({total_size_kb:.1f} KB)")
-
-        for f in uploaded_files:
-            f_bytes = f.getvalue()
-            file_kb = len(f_bytes) / 1024
-            f_hash = compute_content_hash(f_bytes)
-            file_info_map[f.name] = {"bytes": f_bytes, "hash": f_hash, "kb": file_kb}
-
-            is_dup = is_source_indexed(f_hash) or (
-                st.session_state.vector_store is not None
-                and any(
-                    doc.metadata.get("content_hash") == f_hash or doc.metadata.get("source") == f.name
-                    for doc in st.session_state.vector_store.docstore._dict.values()
-                )
-            )
-
-            if is_dup:
-                duplicate_files.append(f)
-            else:
-                new_files.append(f)
-
-            badge_html = (
-                '<span style="background: #eef2ff; color: #4338ca; font-size: 0.72rem; font-weight: 600; padding: 1px 5px; border-radius: 4px;">Indexed</span>'
-                if is_dup
-                else f'<span style="color: #64748b; font-family: \'Geist\', sans-serif;">{file_kb:.0f} KB</span>'
-            )
-
-            st.markdown(
-                f"""
-                <div style="background: #f8fafc; border: 1px solid #eaedff; border-radius: 8px; padding: 0.4rem 0.6rem; margin-bottom: 4px; font-size: 0.8rem; display: flex; align-items: center; justify-content: space-between;">
-                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;">📄 {f.name}</span>
-                    {badge_html}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    # Action Buttons: PDF Ingestion / Re-index / Clear
-    if uploaded_files and len(duplicate_files) == len(uploaded_files):
-        col_use, col_reidx, col_clr = st.columns([1.1, 1.1, 0.9])
-        with col_use:
-            use_existing_btn = st.button("Use Existing", use_container_width=True)
-        with col_reidx:
-            reindex_btn = st.button("🔄 Re-index", type="primary", use_container_width=True)
-        with col_clr:
-            clear_btn = st.button("🗑️ Clear", use_container_width=True)
-        process_btn = False
-    else:
-        use_existing_btn = False
-        reindex_btn = False
-        col_proc, col_clr = st.columns([1.4, 1])
-        with col_proc:
-            process_btn = st.button("⚡ Process PDFs", type="primary", use_container_width=True, disabled=not bool(uploaded_files))
-        with col_clr:
-            clear_btn = st.button("🗑️ Clear", use_container_width=True)
-
-    if clear_btn:
-        clear_knowledge_base()
-        st.toast("Knowledge base cleared.", icon="🗑️")
-        st.rerun()
-
-    if use_existing_btn:
-        st.toast("Using existing indexed document.", icon="📄")
-
-    # Re-indexing PDFs
-    if reindex_btn and duplicate_files:
-        with st.status("Re-indexing document(s)...", expanded=True) as status:
-            try:
-                embeddings = get_embedding_model()
-                current_vs = st.session_state.vector_store
-
-                for df in duplicate_files:
-                    if current_vs is not None:
-                        current_vs = remove_source_from_vector_store(current_vs, df.name, embeddings)
-                    unregister_source_by_name_or_hash(df.name)
-
-                reindex_tuples = [
-                    (file_info_map[df.name]["bytes"], df.name, file_info_map[df.name]["hash"])
-                    for df in duplicate_files
-                ]
-                chunks, stats = process_pdf_files(
-                    file_sources=reindex_tuples,
-                    chunk_size=CHUNK_SIZE,
-                    chunk_overlap=CHUNK_OVERLAP,
-                )
-
-                if chunks:
-                    current_vs = add_documents_to_vector_store(current_vs, chunks, embeddings)
-                    save_vector_store(current_vs)
-
-                    for proc_item in stats["processed_files"]:
-                        register_source(
-                            source=proc_item["filename"],
-                            source_type="pdf",
-                            title=proc_item["filename"],
-                            content_hash=proc_item.get("content_hash", ""),
-                            chunk_count=proc_item["chunks"],
-                            total_pages=proc_item["pages"],
-                        )
-
-                    st.session_state.vector_store = current_vs
-                    st.session_state.kb_stats["processed"] = True
-                    st.session_state.kb_stats["document_names"] = sorted(list({
-                        doc.metadata.get("source") for doc in current_vs.docstore._dict.values()
-                    }))
-                    st.session_state.kb_stats["total_chunks"] = len(current_vs.docstore._dict)
-                    st.session_state.kb_stats["total_pages"] = sum(
-                        s.get("total_pages", 0) or 0 for s in list_registered_sources()
-                    )
-
-                    status.update(label="✓ Document re-indexed successfully!", state="complete")
-                    st.toast("Document re-indexed successfully!", icon="✅")
-                    st.rerun()
-                else:
-                    status.update(label="No extractable text found", state="error")
-            except Exception as ex:
-                status.update(label="Re-indexing failed", state="error")
-                st.error(f"Error during re-indexing: {str(ex)}")
-
-    # Processing New PDFs
-    if process_btn and uploaded_files:
-        files_to_process = new_files if new_files else uploaded_files
-        with st.status("Building semantic FAISS index...", expanded=True) as status:
-            try:
-                file_tuples = [
-                    (file_info_map[f.name]["bytes"], f.name, file_info_map[f.name]["hash"])
-                    for f in files_to_process
-                ]
-                chunks, stats = process_pdf_files(
-                    file_sources=file_tuples,
-                    chunk_size=CHUNK_SIZE,
-                    chunk_overlap=CHUNK_OVERLAP,
-                )
-
-                if stats["empty_files"]:
-                    st.warning(f"⚠️ Empty PDF skipped: {', '.join(stats['empty_files'])}")
-
-                if chunks:
-                    embeddings = get_embedding_model()
-                    vector_store = add_documents_to_vector_store(
-                        st.session_state.vector_store, chunks, embeddings
-                    )
-                    save_vector_store(vector_store)
-
-                    for proc_item in stats["processed_files"]:
-                        register_source(
-                            source=proc_item["filename"],
-                            source_type="pdf",
-                            title=proc_item["filename"],
-                            content_hash=proc_item.get("content_hash", ""),
-                            chunk_count=proc_item["chunks"],
-                            total_pages=proc_item["pages"],
-                        )
-
-                    total_size_kb = sum(len(f.getvalue()) for f in uploaded_files) / 1024
-                    st.session_state.vector_store = vector_store
-                    st.session_state.kb_stats = {
-                        "processed": True,
-                        "document_names": sorted(list({
-                            doc.metadata.get("source") for doc in vector_store.docstore._dict.values()
-                        })),
-                        "total_pages": sum(s.get("total_pages", 0) or 0 for s in list_registered_sources()),
-                        "total_chunks": len(vector_store.docstore._dict),
-                        "file_size_kb": total_size_kb,
-                        "embedding_model": EMBEDDING_MODEL_NAME,
-                        "groq_model": st.session_state.selected_model,
-                    }
-                    st.session_state.uploaded_file_fingerprint = "-".join(
-                        sorted([f.name for f in uploaded_files])
-                    )
-
-                    status.update(label=f"✓ Vector index ready ({len(vector_store.docstore._dict)} chunks)!", state="complete")
-                    st.toast("Knowledge base updated!", icon="✅")
-                    st.rerun()
-                else:
-                    status.update(label="No text found in PDFs.", state="error")
-                    st.error("Could not extract any text from the uploaded PDF documents.")
-            except Exception as err:
-                status.update(label="Processing failed", state="error")
-                st.error(f"Error processing documents: {str(err)}")
-
-    st.markdown("<hr style='border: none; border-top: 1px solid #eaedff; margin: 1.1rem 0;'>", unsafe_allow_html=True)
-
-    # 5. Web / URL / YouTube Ingestion Manager
-    st.markdown("#### 🌐 Web / URL / YouTube Ingestion")
-    input_url = st.text_input(
-        "Website or YouTube URL",
-        placeholder="https://example.com/article or YouTube URL",
-        help="Enter a public webpage or YouTube video URL to ingest and analyze.",
-        label_visibility="collapsed",
-        key="web_url_input_box",
-    )
-
-    url_is_indexed = False
-    norm_url_preview = None
-    raw_input_url = input_url.strip()
-    detected_source_type = detect_source_type(raw_input_url) if raw_input_url else "webpage"
-    is_youtube_input = detected_source_type == "youtube"
-
-    if raw_input_url:
-        try:
-            norm_url_preview = normalize_youtube_url(raw_input_url) if is_youtube_input else validate_and_normalize_url(raw_input_url)
-            url_is_indexed = is_url_indexed(norm_url_preview) or (
-                st.session_state.vector_store is not None
-                and any(
-                    doc.metadata.get("source") == norm_url_preview
-                    for doc in st.session_state.vector_store.docstore._dict.values()
-                )
-            )
-        except Exception:
-            url_is_indexed = False
-
-    if url_is_indexed:
-        st.info("▶ YouTube video already indexed." if is_youtube_input else "🌐 Webpage already indexed.")
-
-    col_add_url, col_reidx_url = st.columns([1.2, 1.2])
-    with col_add_url:
-        if is_youtube_input:
-            add_button_label = "+ Analyze Video" if not url_is_indexed else "Open Analysis"
-        else:
-            add_button_label = "+ Add Website" if not url_is_indexed else "Open Analysis"
-
-        add_url_btn = st.button(
-            add_button_label,
-            type="primary" if not url_is_indexed else "secondary",
-            use_container_width=True,
-            disabled=not bool(raw_input_url),
-        )
-    with col_reidx_url:
-        reindex_url_btn = st.button(
-            "🔄 Re-index",
-            use_container_width=True,
-            disabled=not (bool(raw_input_url) and url_is_indexed),
-            help="Re-fetch and replace indexed content for this URL.",
-        )
-
-    # Ingestion Execution Trigger
-    if (add_url_btn or reindex_url_btn) and raw_input_url:
-        try:
-            if is_youtube_input:
-                norm_target_url = normalize_youtube_url(raw_input_url)
-            else:
-                norm_target_url = validate_and_normalize_url(raw_input_url)
-
-            # URL Change Detection: If user entered an existing URL or selected Open Analysis
-            if add_url_btn and url_is_indexed:
-                # Use Existing path: Load indexed content for this URL into an isolated analysis
-                src_reg_entry = get_source_by_url(norm_target_url) or {}
-                st.session_state.active_source_id = norm_target_url
-                st.session_state.active_source_url = norm_target_url
-                st.session_state.active_source_hash = src_reg_entry.get("content_hash", "")
-                st.session_state.active_source_type = detected_source_type
-                st.session_state.active_url = norm_target_url
-                st.session_state.current_view = "website_analysis"
-
-                if norm_target_url in st.session_state.analyses:
-                    st.session_state.current_analysis = st.session_state.analyses[norm_target_url]
-                    st.session_state.active_analysis_id = st.session_state.current_analysis.get("analysis_id")
-                    st.session_state.active_source_hash = st.session_state.current_analysis.get("content_hash", st.session_state.active_source_hash)
-                else:
-                    # Build fresh analysis from stored chunks in vector store
-                    if st.session_state.vector_store is not None:
-                        url_chunks = [
-                            doc for doc in st.session_state.vector_store.docstore._dict.values()
-                            if doc.metadata.get("source") == norm_target_url
-                        ]
-                        page_title = url_chunks[0].metadata.get("title", norm_target_url) if url_chunks else norm_target_url
-                        analysis = generate_structured_website_analysis(
-                            url=norm_target_url,
-                            page_title=page_title,
-                            chunks=url_chunks,
-                            llm_model=st.session_state.selected_model,
-                            api_key=active_key,
-                        )
-                        st.session_state.current_analysis = analysis
-                        st.session_state.analyses[norm_target_url] = analysis
-                        st.session_state.active_analysis_id = analysis.get("analysis_id")
-                        st.session_state.active_source_hash = analysis.get("content_hash", "")
-                st.toast("Loaded existing analysis.", icon="▶" if is_youtube_input else "🌐")
-                st.rerun()
-
-            # Active Ingestion / Re-indexing Path:
-            # 1. Reset per-page analysis session state to prevent URL A contamination
-            st.session_state.active_source_id = norm_target_url
-            st.session_state.active_source_url = norm_target_url
-            st.session_state.active_source_hash = None
-            st.session_state.active_source_type = detected_source_type
-            st.session_state.active_url = norm_target_url
-            st.session_state.current_analysis = None
-            st.session_state.current_view = "website_analysis"
-
-            status_banner = f"🎬 Analyzing YouTube: {norm_target_url}..." if is_youtube_input else f"🔄 Analyzing {norm_target_url}..."
-            with st.status(status_banner, expanded=True) as web_status:
-                if is_youtube_input:
-                    web_status.write("🎬 Fetching YouTube video information & captions...")
-                    raw_docs, web_stats = process_youtube_url(norm_target_url)
-                    chunks = raw_docs  # already chunked by chunk_transcript_segments with timestamps
-                else:
-                    web_status.write("🌐 Fetching webpage safely...")
-                    raw_docs, web_stats = process_web_url(norm_target_url)
-                    web_status.write("✂️ Creating semantic chunks...")
-                    chunks = chunk_documents(raw_docs, chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-
-                final_url = web_stats["url"]
-                page_title = web_stats["title"]
-                content_hash = web_stats["content_hash"]
-                final_source_type = web_stats.get("source_type", detected_source_type)
-
-                embeddings = get_embedding_model()
-                current_vs = st.session_state.vector_store
-
-                # Remove previous chunks if re-indexing or already in index
-                if is_url_indexed(final_url) or reindex_url_btn:
-                    web_status.write("🔄 Updating indexed chunks...")
-                    if current_vs is not None:
-                        current_vs = remove_source_from_vector_store(current_vs, final_url, embeddings)
-                    unregister_source_by_name_or_hash(final_url)
-
-                web_status.write(f"🧹 Extracted content: **{page_title}**")
-
-                if not chunks:
-                    web_status.update(label="No extractable text found", state="error")
-                    st.session_state.current_analysis = {
-                        "analysis_id": str(uuid.uuid4()),
-                        "source_url": final_url,
-                        "source_title": page_title,
-                        "source_type": final_source_type,
-                        "status": "failed",
-                        "summary": "Could not extract readable text from this source.",
-                        "key_points": [],
-                        "links": [],
-                        "other_information": {},
-                        "charts": [],
-                        "citations": [],
-                        "messages": [],
-                        "error": "No readable content extracted.",
-                    }
-                    st.session_state.active_analysis_id = st.session_state.current_analysis["analysis_id"]
-                else:
-                    web_status.write(f"🧠 Indexing {len(chunks)} chunks in unified FAISS...")
-                    current_vs = add_documents_to_vector_store(current_vs, chunks, embeddings)
-                    save_vector_store(current_vs)
-
-                    register_source(
-                        source=final_url,
-                        source_type=final_source_type,
-                        title=page_title,
-                        content_hash=content_hash,
-                        chunk_count=len(chunks),
-                        total_pages=None,
-                    )
-
-                    st.session_state.vector_store = current_vs
-                    st.session_state.kb_stats["processed"] = True
-                    st.session_state.kb_stats["document_names"] = sorted(list({
-                        doc.metadata.get("source") for doc in current_vs.docstore._dict.values()
-                    }))
-                    st.session_state.kb_stats["total_chunks"] = len(current_vs.docstore._dict)
-
-                    web_status.write("📊 Generating structured summary, insights & charts...")
-                    analysis = generate_structured_website_analysis(
-                        url=final_url,
-                        page_title=page_title,
-                        chunks=chunks,
-                        web_stats=web_stats,
-                        llm_model=st.session_state.selected_model,
-                        api_key=active_key,
-                    )
-
-                    # Store isolated analysis
-                    st.session_state.active_analysis_id = analysis["analysis_id"]
-                    st.session_state.active_source_id = final_url
-                    st.session_state.active_source_url = final_url
-                    st.session_state.active_source_hash = content_hash
-                    st.session_state.active_source_type = final_source_type
-                    st.session_state.active_url = final_url
-                    st.session_state.current_analysis = analysis
-                    st.session_state.analyses[final_url] = analysis
-
-                    web_status.update(label="✓ Analysis Ready!", state="complete")
-                    st.toast(f"Analysis Ready: {page_title}", icon="▶" if is_youtube_input else "🌐")
-                    st.rerun()
-
-        except SSRFSecurityError as ssrf_err:
-            st.session_state.current_analysis = {
-                "analysis_id": str(uuid.uuid4()),
-                "source_url": input_url.strip(),
-                "source_title": "Security Exception",
-                "source_type": detected_source_type,
-                "status": "failed",
-                "summary": "Security Block: This URL points to a private or restricted address.",
-                "key_points": [],
-                "links": [],
-                "other_information": {},
-                "charts": [],
-                "citations": [],
-                "messages": [],
-                "error": str(ssrf_err),
-            }
-            st.session_state.active_analysis_id = st.session_state.current_analysis["analysis_id"]
-            st.error(f"🛡️ Security Block: {str(ssrf_err)}")
-        except YouTubeProcessingError as yt_err:
-            st.session_state.current_analysis = {
-                "analysis_id": str(uuid.uuid4()),
-                "source_url": input_url.strip(),
-                "source_title": "YouTube Video Ingestion Failed",
-                "source_type": "youtube",
-                "status": "failed",
-                "summary": "YouTube video analysis failed.",
-                "key_points": [],
-                "links": [],
-                "other_information": {},
-                "charts": [],
-                "citations": [],
-                "messages": [],
-                "error": str(yt_err),
-            }
-            st.session_state.active_analysis_id = st.session_state.current_analysis["analysis_id"]
-            st.error(f"❌ YouTube Error: {str(yt_err)}")
-        except WebProcessingError as web_err:
-            st.session_state.current_analysis = {
-                "analysis_id": str(uuid.uuid4()),
-                "source_url": input_url.strip(),
-                "source_title": "Ingestion Failed",
-                "source_type": "url",
-                "status": "failed",
-                "summary": "Website analysis failed. Unable to fetch webpage.",
-                "key_points": [],
-                "links": [],
-                "other_information": {},
-                "charts": [],
-                "citations": [],
-                "messages": [],
-                "error": str(web_err),
-            }
-            st.session_state.active_analysis_id = st.session_state.current_analysis["analysis_id"]
-            st.error(f"❌ {str(web_err)}")
-        except Exception as ex:
-            st.session_state.current_analysis = {
-                "analysis_id": str(uuid.uuid4()),
-                "source_url": input_url.strip(),
-                "source_title": "Processing Error",
-                "source_type": detected_source_type,
-                "status": "failed",
-                "summary": "Failed to analyze source.",
-                "key_points": [],
-                "links": [],
-                "other_information": {},
-                "charts": [],
-                "citations": [],
-                "messages": [],
-                "error": str(ex),
-            }
-            st.session_state.active_analysis_id = st.session_state.current_analysis["analysis_id"]
-            st.error(f"Processing error: {str(ex)}")
-
-    st.markdown("<hr style='border: none; border-top: 1px solid #eaedff; margin: 1.1rem 0;'>", unsafe_allow_html=True)
-
-    # 6. Retrieval Settings
-    st.markdown("#### ⚙️ Retrieval Settings")
-    top_k = st.slider(
-        "Top-K Citations",
+    # 5. Citations & Grounding
+    st.markdown("##### 🎯 Retrieval Parameters")
+    st.session_state.top_k = st.slider(
+        "Top-K Document Citations",
         min_value=1,
         max_value=15,
-        value=DEFAULT_TOP_K,
-        help="Number of chunks retrieved for answer grounding.",
+        value=st.session_state.top_k,
     )
-
-    answer_mode_ui = st.radio(
-        "Answer Mode",
-        options=["🌐 Source + Fallback", "🔒 Indexed Source Only"],
-        index=0,
-        help="Source + Fallback: answers from source first and provides helpful fallback when source is insufficient. Indexed Source Only: strictly answers only from uploaded/indexed content.",
-        key="answer_mode_toggle",
+    ans_mode = st.radio(
+        "Grounding Mode",
+        options=["🌐 Document + Knowledge Fallback (Answers All Questions)", "🔒 Strict Document / Record Only"],
+        index=0 if st.session_state.answer_mode == "SOURCE_FIRST_WITH_FALLBACK" else 1,
     )
-    answer_mode = "SOURCE_FIRST_WITH_FALLBACK" if "Fallback" in answer_mode_ui else "STRICT_SOURCE"
-    if answer_mode == "STRICT_SOURCE":
-        st.caption("🔒 Answers only from uploaded/indexed content.")
-    else:
-        st.caption("🌐 Uses indexed content first; provides additional knowledge when insufficient.")
+    st.session_state.answer_mode = "SOURCE_FIRST_WITH_FALLBACK" if "Fallback" in ans_mode else "STRICT_SOURCE"
 
-    debug_mode_enabled = st.checkbox(
-        "🛠️ Retrieval Debug Mode",
-        value=False,
-        key="retrieval_debug_toggle",
-        help="Display intent classification, query expansion variants, candidate pool size, relevance scores, and neighbor chunk diagnostics.",
-    )
-
-    # 7. User Profile Card
-    st.markdown(
-        """
-        <div style="background: #f8fafc; border: 1px solid #eaedff; border-radius: 12px; padding: 0.75rem; display: flex; align-items: center; gap: 10px; margin-top: 1.5rem;">
-            <div class="stitch-logo-badge" style="width: 34px; height: 34px; font-size: 0.95rem; background: #4338ca;">G</div>
-            <div style="flex: 1; overflow: hidden;">
-                <div style="font-weight: 700; font-size: 0.88rem; color: #131b2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Ganesh</div>
-                <div style="font-size: 0.75rem; color: #64748b; font-family: 'Geist', sans-serif;">Enterprise Workspace</div>
-            </div>
-            <span style="color: #0d9488; font-size: 0.8rem; font-weight: 700; font-family: 'Geist', sans-serif;">● Active</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# =========================================================================
-# VIEW 1: HOME PAGE (Clean, User-Focused, No Developer Jargon)
-# =========================================================================
-if st.session_state.current_view == "home":
-    st.markdown(
-        """
-        <div class="stitch-top-header">
-            <div class="stitch-breadcrumbs">
-                <span>Workspace</span>
-                <span style="color: #94a3b8; font-weight: bold;">/</span>
-                <span class="stitch-breadcrumbs-active">Home Hub</span>
-            </div>
-            <div style="background: #f0fdf4; border: 1px solid #ccfbf1; color: #0d9488; padding: 0.3rem 0.8rem; border-radius: 9999px; font-size: 0.78rem; font-weight: 600; font-family: 'Geist', sans-serif; display: flex; align-items: center; gap: 6px;">
-                <span class="pulse-dot"></span>
-                Syntropic Clarity Engine Ready
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Hero Branding Block
-    st.markdown(
-        """
-        <div class="home-hero-card">
-            <div class="home-hero-title">DocuMind AI</div>
-            <div class="home-hero-tagline">Ask questions about your documents and websites.</div>
-            <div class="home-hero-desc">
-                DocuMind AI combines your PDFs and public web pages into a verified, hallucination-guarded semantic knowledge workspace. Every response is strictly grounded in verifiable source citations.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Knowledge Source Metrics Overview (Simple user metrics, no internal vector/chunk counts)
-    all_registered = list_registered_sources()
-    pdf_count = len([s for s in all_registered if s.get("source_type") == "pdf"])
-    web_count = len([s for s in all_registered if s.get("source_type") in ("url", "webpage")])
-    yt_count = len([s for s in all_registered if s.get("source_type") == "youtube"])
-    total_sources = len(all_registered)
-
-    st.markdown(
-        f"""
-        <div class="metrics-container">
-            <div class="metric-pill">
-                <div class="metric-icon-box" style="background: #fee2e2; color: #dc2626;">📄</div>
-                <div>
-                    <div class="metric-value">{pdf_count}</div>
-                    <div class="metric-label">PDF Documents</div>
-                </div>
-            </div>
-            <div class="metric-pill">
-                <div class="metric-icon-box" style="background: #e0e7ff; color: #4338ca;">🌐</div>
-                <div>
-                    <div class="metric-value">{web_count}</div>
-                    <div class="metric-label">Indexed Websites</div>
-                </div>
-            </div>
-            <div class="metric-pill">
-                <div class="metric-icon-box" style="background: #fee2e2; color: #dc2626;">▶</div>
-                <div>
-                    <div class="metric-value">{yt_count}</div>
-                    <div class="metric-label">YouTube Videos</div>
-                </div>
-            </div>
-            <div class="metric-pill">
-                <div class="metric-icon-box" style="background: #f0fdf4; color: #059669;">📚</div>
-                <div>
-                    <div class="metric-value">{total_sources}</div>
-                    <div class="metric-label">Total Sources</div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Active Analysis Banner (if currently loaded)
-    if st.session_state.current_analysis and st.session_state.current_analysis.get("status") == "completed":
-        active_title = st.session_state.current_analysis.get("source_title", "Source")
-        active_url_str = st.session_state.current_analysis.get("source_url", "")
-        active_type = st.session_state.current_analysis.get("source_type", "url")
-        is_yt_act = active_type == "youtube"
-        banner_title = "Active YouTube Video Analysis" if is_yt_act else "Active Website Analysis"
-        border_col = "#dc2626" if is_yt_act else "#4338ca"
-        tag_col = "#dc2626" if is_yt_act else "#4338ca"
-        badge_icon = "▶" if is_yt_act else "🌐"
-
-        col_banner, col_btn = st.columns([8, 2])
-        with col_banner:
-            st.markdown(
-                f"""
-                <div style="background: #ffffff; border: 1px solid #eaedff; border-left: 4px solid {border_col}; border-radius: 12px; padding: 0.9rem 1.25rem;">
-                    <div style="font-size: 0.76rem; font-weight: 700; color: {tag_col}; text-transform: uppercase;">{banner_title}</div>
-                    <div style="font-weight: 700; font-size: 1.05rem; color: #131b2e;">{badge_icon} {active_title}</div>
-                    <div style="font-size: 0.8rem; color: #64748b;">{active_url_str}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with col_btn:
-            if st.button("Open Analysis →", key="home_open_analysis_btn", use_container_width=True, type="primary"):
-                st.session_state.current_view = "website_analysis"
-                st.rerun()
-
-    # Active & Recent Sources Shelf
-    st.markdown("### 📚 Indexed Knowledge Sources")
-    if not all_registered:
-        st.info("👈 Upload PDF documents or enter a Website or YouTube URL in the sidebar to build your knowledge base.")
-    else:
-        for src in all_registered:
-            src_type = src.get("source_type", "pdf")
-            src_name = src.get("source", "")
-            src_title = src.get("title", src_name)
-
-            col_src_info, col_src_act = st.columns([8, 2])
-            with col_src_info:
-                if src_type == "youtube":
-                    st.markdown(
-                        f"""
-                        <div style="background: #ffffff; border: 1px solid #eaedff; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                            <div>
-                                <span style="font-weight: 700; font-size: 0.92rem; color: #131b2e;">▶ {src_title}</span>
-                                <div style="font-size: 0.78rem; color: #64748b; font-family: 'Geist', sans-serif;">{src_name}</div>
-                            </div>
-                            <span style="background: #fee2e2; color: #dc2626; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 6px;">YouTube</span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                elif src_type in ("url", "webpage"):
-                    st.markdown(
-                        f"""
-                        <div style="background: #ffffff; border: 1px solid #eaedff; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                            <div>
-                                <span style="font-weight: 700; font-size: 0.92rem; color: #131b2e;">🌐 {src_title}</span>
-                                <div style="font-size: 0.78rem; color: #64748b; font-family: 'Geist', sans-serif;">{src_name}</div>
-                            </div>
-                            <span style="background: #eef2ff; color: #4338ca; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 6px;">Webpage</span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    pages = src.get("total_pages", 1)
-                    st.markdown(
-                        f"""
-                        <div style="background: #ffffff; border: 1px solid #eaedff; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-                            <div>
-                                <span style="font-weight: 700; font-size: 0.92rem; color: #131b2e;">📄 {src_name}</span>
-                                <div style="font-size: 0.78rem; color: #64748b; font-family: 'Geist', sans-serif;">{pages} page(s) indexed</div>
-                            </div>
-                            <span style="background: #fee2e2; color: #dc2626; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 6px;">PDF</span>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-            with col_src_act:
-                if src_type in ("url", "webpage", "youtube"):
-                    if st.button("Inspect ↗", key=f"inspect_src_{src_name}", use_container_width=True):
-                        st.session_state.active_source_id = src_name
-                        st.session_state.active_source_url = src_name
-                        st.session_state.active_source_hash = src.get("content_hash", "")
-                        st.session_state.active_source_type = src_type
-                        st.session_state.active_url = src_name
-                        st.session_state.current_view = "website_analysis"
-                        if src_name in st.session_state.analyses:
-                            st.session_state.current_analysis = st.session_state.analyses[src_name]
-                            st.session_state.active_analysis_id = st.session_state.current_analysis.get("analysis_id")
-                            st.session_state.active_source_hash = st.session_state.current_analysis.get("content_hash", st.session_state.active_source_hash)
-                        else:
-                            if st.session_state.vector_store is not None:
-                                url_chunks = [
-                                    doc for doc in st.session_state.vector_store.docstore._dict.values()
-                                    if doc.metadata.get("source") == src_name
-                                ]
-                                analysis = generate_structured_website_analysis(
-                                    url=src_name,
-                                    page_title=src_title,
-                                    chunks=url_chunks,
-                                    llm_model=st.session_state.selected_model,
-                                    api_key=active_key,
-                                )
-                                st.session_state.current_analysis = analysis
-                                st.session_state.analyses[src_name] = analysis
-                                st.session_state.active_analysis_id = analysis.get("analysis_id")
-                        st.rerun()
-
-    # Universal Search / Ask Dock
-    home_query = st.chat_input("Ask anything across your documents and websites...")
-    if home_query:
-        st.session_state.current_view = "knowledge_chat"
-        st.session_state.pending_query = home_query
-        st.rerun()
-
-
-# =========================================================================
-# VIEW 2: WEBSITE / YOUTUBE ANALYSIS (Strict Source Isolation & Structured Cards)
-# =========================================================================
-elif st.session_state.current_view == "website_analysis":
-    # Navigation Top Bar: Back to Home
-    col_back, col_title_bar = st.columns([2, 8])
-    with col_back:
-        if st.button("← Back to Home", key="back_to_home_btn", use_container_width=True):
-            st.session_state.current_view = "home"
+    st.markdown("<hr style='margin: 1.25rem 0; border-color: #21262d;'>", unsafe_allow_html=True)
+    c_clear, c_close = st.columns([1, 1])
+    with c_clear:
+        if st.button("🗑️ Clear Indexed Documents", use_container_width=True):
+            clear_knowledge_base()
+            st.toast("Knowledge base cleared.", icon="🗑️")
+            st.rerun()
+    with c_close:
+        if st.button("✓ Apply & Close", type="primary", use_container_width=True):
             st.rerun()
 
-    analysis = st.session_state.current_analysis
-    expected_url = st.session_state.active_url
 
-    # Stale Result Protection Guard
-    if not analysis or not expected_url:
-        st.markdown(
-            """
-            <div style="text-align: center; padding: 4rem 1rem; color: #64748b;">
-                <div style="font-size: 3rem; margin-bottom: 0.5rem;">🌐</div>
-                <h3 style="color: #131b2e;">No Source Selected</h3>
-                <p>Enter a public webpage or YouTube video URL in the sidebar and click <strong>+ Add / Analyze</strong> to start an analysis.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    elif analysis.get("status") == "failed":
-        # Failed state: strictly do not render any previous URL result
-        err_msg = analysis.get("error", "Failed to ingest source.")
-        st.markdown(
-            f"""
-            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; padding: 2rem; margin: 1.5rem 0;">
-                <div style="font-size: 1.8rem; margin-bottom: 0.5rem;">❌</div>
-                <h3 style="color: #991b1b; margin-top: 0;">Source Analysis Failed</h3>
-                <p style="color: #b91c1c; font-size: 0.95rem;">{err_msg}</p>
-                <div style="font-size: 0.85rem; color: #64748b; margin-top: 1rem;">
-                    No analysis available for: <strong>{analysis.get('source_url')}</strong>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    elif not validate_analysis_session(analysis, expected_url):
-        # Mismatched / Stale Result Protection
-        st.warning("Stale analysis detected and safely discarded. Please re-select or re-analyze the source.")
+# --- EXACT STITCH LEFT SIDEBAR ---
+with st.sidebar:
+    # Mobile-only close button header (brand title styled via CSS ::before)
+    if st.button("✕", key="btn_mobile_close_sidebar"):
+        st.session_state.mobile_sidebar_open = False
+        st.rerun()
+
+    # 1. New Chat Button (Stitch styled with SVG icon)
+    if st.button("New Chat", key="btn_new_chat", use_container_width=True):
+        st.session_state.mobile_sidebar_open = False
+        new_session_id = f"session_{len(st.session_state.chat_sessions) + 1}_{int(time.time())}"
+        st.session_state.chat_sessions[new_session_id] = {
+            "title": "New Conversation",
+            "messages": [],
+            "created_at": datetime.now().strftime("%I:%M %p"),
+        }
+        st.session_state.current_session_id = new_session_id
+        st.rerun()
+
+    # 2. Search chats... input box (Stitch styled with SVG icon)
+    search_query = st.text_input(
+        "Search chats...",
+        placeholder="Search chats...",
+        label_visibility="collapsed",
+        key="search_chats_input",
+    )
+
+    # 3. Recents Section
+    st.markdown('<div class="recents-header">RECENTS</div>', unsafe_allow_html=True)
+
+    session_items = list(reversed(list(st.session_state.chat_sessions.items())))
+    if search_query.strip():
+        session_items = [
+            (s_id, s_data)
+            for s_id, s_data in session_items
+            if search_query.strip().lower() in s_data.get("title", "").lower()
+        ]
+
+    if not session_items:
+        st.markdown('<div class="empty-recents-text">No recent conversations.</div>', unsafe_allow_html=True)
     else:
-        # Verified Current Analysis Session
-        cur_url = analysis["source_url"]
-        cur_title = analysis["source_title"]
-        created_time = analysis.get("created_at", "Recently")
-        is_yt_page = analysis.get("source_type") == "youtube"
-        badge_header = '<span class="source-badge" style="background: #fee2e2; color: #dc2626;">▶ YOUTUBE ANALYSIS</span>' if is_yt_page else '<span class="source-badge">🌐 WEBSITE ANALYSIS</span>'
-        source_label_text = "YouTube Video" if is_yt_page else "Webpage"
-        ch_meta = ""
-        channel_name = analysis.get("other_information", {}).get("channel") or analysis.get("other_information", {}).get("author")
-        if channel_name:
-            ch_meta = f'<span>•</span><span><strong>Channel:</strong> {channel_name}</span>'
+        for s_id, s_data in session_items:
+            is_active = s_id == st.session_state.current_session_id
+            s_title = s_data.get("title", "Conversation")
+            btn_label = f"💬  {s_title}" if is_active else f"     {s_title}"
 
-        # Page-Level Source Header
-        st.markdown(
-            f"""
-            <div class="page-source-header">
-                <div class="source-header-top">
-                    <div>
-                        <div style="font-size: 0.72rem; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px;">ACTIVE SOURCE</div>
-                        {badge_header}
-                    </div>
-                    <span class="status-badge-ready">✓ Indexed • Analysis Ready</span>
-                </div>
-                <h2 class="source-header-title">{cur_title}</h2>
-                <div class="source-header-meta">
-                    <span><strong>URL:</strong> <a href="{cur_url}" target="_blank" rel="noopener noreferrer">{cur_url} ↗</a></span>
-                    <span>•</span>
-                    <span><strong>Source:</strong> {source_label_text}</span>
-                    {ch_meta}
-                    <span>•</span>
-                    <span><strong>Indexed:</strong> {created_time}</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        col_main_left, col_main_right = st.columns([7, 4], gap="large")
-
-        with col_main_left:
-            # BOX 1 — SUMMARY
-            summary_text = analysis.get("summary", "")
-            st.markdown(
-                f"""
-                <div class="structured-card">
-                    <div class="card-header-bar">
-                        <div class="card-title-group">
-                            <span>📝</span>
-                            <span>Summary</span>
-                        </div>
-                        <span style="font-size: 0.74rem; font-weight: 600; color: #4338ca; background: #eef2ff; padding: 2px 7px; border-radius: 6px;">AI Grounded</span>
-                    </div>
-                    <div style="font-size: 0.94rem; line-height: 1.6; color: #1e293b;">
-                        {summary_text}
-                    </div>
-                    <div class="card-footer-scope">
-                        Based only on: <a href="{cur_url}" target="_blank" rel="noopener noreferrer">{cur_url} ↗</a>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            # BOX 2 — KEY INSIGHTS
-            key_insights = analysis.get("key_points", [])
-            if key_insights:
-                insights_html = "".join(
-                    f'<div class="insight-bullet-item"><span class="insight-dot">•</span><div>{pt}</div></div>'
-                    for pt in key_insights
-                )
-                st.markdown(
-                    f"""
-                    <div class="structured-card">
-                        <div class="card-header-bar">
-                            <div class="card-title-group">
-                                <span>💡</span>
-                                <span>Key Insights</span>
-                            </div>
-                            <span style="font-size: 0.74rem; font-weight: 600; color: #0d9488; background: #f0fdf4; padding: 2px 7px; border-radius: 6px;">{len(key_insights)} Key Points</span>
-                        </div>
-                        <div>
-                            {insights_html}
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            # BOX 5 — DATA / CHARTS (Strictly rendered only if validated source-backed chart exists)
-            charts = analysis.get("charts", [])
-            if charts:
-                for idx, ch in enumerate(charts):
-                    st.markdown(
-                        f"""
-                        <div class="structured-card">
-                            <div class="card-header-bar">
-                                <div class="card-title-group">
-                                    <span>📊</span>
-                                    <span>Data Visualization: {ch['title']}</span>
-                                </div>
-                                <span style="font-size: 0.74rem; font-weight: 600; color: #4338ca; background: #eef2ff; padding: 2px 7px; border-radius: 6px;">Verified Source Data</span>
-                            </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    # Prepare verified chart data
-                    df_chart = pd.DataFrame(ch["data"]).set_index("label")
-                    chart_type = ch.get("chart_type", "bar")
-                    if chart_type == "line":
-                        st.line_chart(df_chart, use_container_width=True)
-                    elif chart_type == "area":
-                        st.area_chart(df_chart, use_container_width=True)
-                    else:
-                        st.bar_chart(df_chart, use_container_width=True)
-
-                    st.markdown(
-                        f"""
-                            <div class="card-footer-scope">
-                                {ch.get('source_citation', f'Source: {cur_url}')}
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-            # SOURCE Q&A CHAT (Source-Scoped to Current URL / Video)
-            q_heading = "💬 Ask About This Video" if is_yt_page else "💬 Ask About This Website"
-            st.markdown(f"### {q_heading}")
-            st.caption(f"Questions asked here are strictly grounded in: **{cur_title}**")
-
-            # Render Per-Analysis Isolated Messages
-            url_messages = analysis.get("messages", [])
-            for msg in url_messages:
-                if msg["role"] == "user":
-                    t_str = msg.get("time", "Just now")
-                    u_content = html.escape(str(msg.get("content", "")))
-                    user_msg_html = (
-                        '<div class="user-msg-row">'
-                        '<div style="text-align: right; max-width: 82%;">'
-                        f'<div style="font-size: 0.75rem; color: #64748b; margin-bottom: 3px;">You • {t_str}</div>'
-                        f'<div class="user-msg-bubble">{u_content}</div>'
-                        '</div>'
-                        '</div>'
-                    )
-                    st.markdown(user_msg_html, unsafe_allow_html=True)
-                else:
-                    ans = msg["content"]
-                    msg_citations = msg.get("citations", [])
-                    cite_tags = ""
-                    if msg_citations:
-                        chip_list = []
-                        for c in msg_citations:
-                            if c.get("source_type") == "youtube" and c.get("timestamp_formatted"):
-                                ts_link = c.get("timestamp_url") or cur_url
-                                chip_list.append(
-                                    f'<a href="{ts_link}" target="_blank" rel="noopener noreferrer" style="background:#fee2e2; color:#dc2626; padding:2px 8px; border-radius:6px; font-size:0.75rem; text-decoration:none; font-weight:600; margin-right:4px;">▶ {c["formatted"]} ↗</a>'
-                                )
-                            else:
-                                sec_lbl = c.get("heading") or "Section"
-                                chip_list.append(
-                                    f'<span style="background:#eef2ff; color:#4338ca; padding:2px 8px; border-radius:6px; font-size:0.75rem; font-weight:600; margin-right:4px;">📌 {sec_lbl}</span>'
-                                )
-                        cite_tags = f'<div style="margin-top: 8px; border-top: 1px solid #f1f5f9; padding-top: 6px;">{"".join(chip_list)}</div>'
-
-                    bubble_html = format_chat_bubble_html(ans)
-                    ai_msg_html = (
-                        '<div class="ai-msg-row">'
-                        '<div style="width: 32px; height: 32px; border-radius: 8px; background: #e0e7ff; color: #4338ca; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">✨</div>'
-                        '<div class="ai-msg-bubble" style="flex: 1;">'
-                        f'<div style="margin-bottom: 4px;">{bubble_html}</div>'
-                        f'{cite_tags}'
-                        '</div>'
-                        '</div>'
-                    )
-                    st.markdown(ai_msg_html, unsafe_allow_html=True)
-                    if debug_mode_enabled and msg.get("debug_info"):
-                        render_retrieval_debug_expander(msg["debug_info"])
-
-            # Isolated Chat Input Dock for This Source
-            chat_ph = "Ask a question about this video..." if is_yt_page else "Ask a question about this website..."
-            website_query = st.chat_input(chat_ph, key="source_chat_input_dock")
-            if website_query:
-                user_time = datetime.now().strftime("%I:%M %p")
-                analysis["messages"].append({"role": "user", "content": website_query, "time": user_time})
-
-                norm_q = " ".join(website_query.strip().lower().split())
-                cache_key = (
-                    cur_url,
-                    analysis.get("content_hash", ""),
-                    norm_q,
-                    "source_scoped",
-                    answer_mode,
-                    RAG_PIPELINE_VERSION,
-                    top_k,
-                )
-
-                if "query_cache" not in st.session_state:
-                    st.session_state.query_cache = {}
-
-                if cache_key in st.session_state.query_cache:
-                    cached_res = st.session_state.query_cache[cache_key]
-                    clean_ans = sanitize_final_response(cached_res.get("answer", ""))
-                    analysis["messages"].append({
-                        "role": "assistant",
-                        "content": clean_ans,
-                        "citations": cached_res.get("citations", []),
-                        "debug_info": cached_res.get("debug_info"),
-                    })
+            s_key = f"session_btn_act_{s_id}" if is_active else f"session_btn_{s_id}"
+            col_s_btn, col_s_del = st.columns([5, 1])
+            with col_s_btn:
+                if st.button(btn_label, key=s_key, use_container_width=True):
+                    st.session_state.mobile_sidebar_open = False
+                    st.session_state.current_session_id = s_id
                     st.rerun()
-
-                with st.spinner(f"Searching verified sections of {cur_title}..."):
-                    try:
-                        res = query_rag_pipeline(
-                            vector_store=st.session_state.vector_store,
-                            question=website_query,
-                            top_k=top_k,
-                            llm_model=st.session_state.selected_model,
-                            api_key=active_key,
-                            source_filter=cur_url,
-                            source_type=analysis.get("source_type", "youtube" if is_yt_page else "webpage"),
-                            answer_mode=answer_mode,
-                        )
-                        st.session_state.query_cache[cache_key] = res
-                        clean_ans = sanitize_final_response(res.get("answer", ""))
-                        analysis["messages"].append({
-                            "role": "assistant",
-                            "content": clean_ans,
-                            "citations": res.get("citations", []),
-                            "debug_info": res.get("debug_info"),
-                        })
+            with col_s_del:
+                if len(st.session_state.chat_sessions) > 0:
+                    if st.button("✕", key=f"del_session_{s_id}", help="Delete chat"):
+                        del st.session_state.chat_sessions[s_id]
+                        if st.session_state.current_session_id == s_id:
+                            st.session_state.current_session_id = (
+                                list(st.session_state.chat_sessions.keys())[0]
+                                if st.session_state.chat_sessions
+                                else None
+                            )
                         st.rerun()
-                    except Exception as q_err:
-                        st.error(f"Error querying source: {str(q_err)}")
 
-        with col_main_right:
-            # BOX 3 — IMPORTANT LINKS
-            links = analysis.get("links", [])
-            if links:
-                links_html = "".join(
-                    f'<a href="{lnk["url"]}" target="_blank" rel="noopener noreferrer" class="link-chip">'
-                    f'<span class="link-chip-text">🔗 {lnk["text"]} ↗</span>'
-                    f'<span class="link-chip-url">{lnk["url"]}</span>'
-                    f'</a>'
-                    for lnk in links[:12]
-                )
-                st.markdown(
-                    f"""
-                    <div class="structured-card">
-                        <div class="card-header-bar">
-                            <div class="card-title-group">
-                                <span>🔗</span>
-                                <span>Important Links</span>
-                            </div>
-                            <span style="font-size: 0.74rem; font-weight: 600; color: #4338ca; background: #eef2ff; padding: 2px 7px; border-radius: 6px;">{len(links)} Links</span>
-                        </div>
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            {links_html}
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            # BOX 4 — OTHER INFORMATION
-            meta_info = analysis.get("other_information", {})
-            if meta_info:
-                meta_rows = []
-                channel_val = meta_info.get("channel") or (meta_info.get("author") if is_yt_page else None)
-                if channel_val:
-                    meta_rows.append(f'<div class="meta-tag-pill">👤 <strong>Channel:</strong> {channel_val}</div>')
-                elif meta_info.get("author"):
-                    meta_rows.append(f'<div class="meta-tag-pill">✍️ <strong>Author:</strong> {meta_info["author"]}</div>')
-                if meta_info.get("date"):
-                    meta_rows.append(f'<div class="meta-tag-pill">📅 <strong>Date:</strong> {meta_info["date"]}</div>')
-                if meta_info.get("category"):
-                    meta_rows.append(f'<div class="meta-tag-pill">🏷️ <strong>Category:</strong> {meta_info["category"]}</div>')
-                if meta_info.get("topics"):
-                    for tp in meta_info["topics"][:5]:
-                        meta_rows.append(f'<div class="meta-tag-pill"># {tp}</div>')
-
-                if meta_rows:
-                    st.markdown(
-                        f"""
-                        <div class="structured-card">
-                            <div class="card-header-bar">
-                                <div class="card-title-group">
-                                    <span>📌</span>
-                                    <span>Other Information</span>
-                                </div>
-                            </div>
-                            <div class="meta-chip-row">
-                                {''.join(meta_rows)}
-                            </div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-            # BOX 6 — SOURCES & CITATIONS
-            citations = analysis.get("citations", [])
-            st.markdown(
-                f"""
-                <div class="structured-card">
-                    <div class="card-header-bar">
-                        <div class="card-title-group">
-                            <span>🔎</span>
-                            <span>Sources & Citations</span>
-                        </div>
-                        <span style="font-size: 0.74rem; font-weight: 600; color: #0d9488; background: #f0fdf4; padding: 2px 7px; border-radius: 6px;">{len(citations)} Sections</span>
-                    </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            if citations:
-                for idx, c in enumerate(citations[:8], start=1):
-                    snip = c.get("snippet", "")
-                    if is_yt_page and c.get("timestamp_formatted"):
-                        loc_label = c.get("timestamp_formatted")
-                        ts_target_url = c.get("timestamp_url") or cur_url
-                        badge_html = f'<span style="font-size: 0.72rem; font-weight: 600; color: #dc2626; background: #fee2e2; padding: 2px 6px; border-radius: 4px;">{loc_label}</span>'
-                        open_html = f'<a href="{ts_target_url}" target="_blank" rel="noopener noreferrer" style="font-size: 0.76rem; font-weight: 600; color: #dc2626; text-decoration: underline;">▶ Open Video at {loc_label} ↗</a>'
-                    else:
-                        head = c.get("heading") or "Overview"
-                        badge_html = f'<span style="font-size: 0.72rem; font-weight: 600; color: #4338ca; background: #e0e7ff; padding: 2px 6px; border-radius: 4px;">{head}</span>'
-                        open_html = f'<a href="{cur_url}" target="_blank" rel="noopener noreferrer" style="font-size: 0.76rem; font-weight: 600; color: #4338ca; text-decoration: underline;">Open Source ↗</a>'
-
-                    st.markdown(
-                        f"""
-                        <div class="source-citation-card">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                <span style="font-weight: 750; font-size: 0.85rem; color: #131b2e;">{idx}. {cur_title}</span>
-                                {badge_html}
-                            </div>
-                            <div style="font-size: 0.8rem; color: #475569; margin-bottom: 6px;">"{snip}"</div>
-                            {open_html}
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.caption("No sections available for citation.")
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-
-# =========================================================================
-# VIEW 3: GLOBAL KNOWLEDGE CHAT (Cross-Source Knowledge Chat)
-# =========================================================================
-elif st.session_state.current_view == "knowledge_chat":
+    # 4. User Profile Pinned at the Absolute Bottom (Daya Purnavi, DP Avatar, NO Patient text)
     st.markdown(
-        """
-        <div class="stitch-top-header">
-            <div class="stitch-breadcrumbs">
-                <span>Workspace</span>
-                <span style="color: #94a3b8; font-weight: bold;">/</span>
-                <span class="stitch-breadcrumbs-active">Global Knowledge Chat</span>
-            </div>
-            <div style="background: #f0fdf4; border: 1px solid #ccfbf1; color: #0d9488; padding: 0.3rem 0.8rem; border-radius: 9999px; font-size: 0.78rem; font-weight: 600; font-family: 'Geist', sans-serif; display: flex; align-items: center; gap: 6px;">
-                <span class="pulse-dot"></span>
-                Cross-Source Intelligence Active
-            </div>
+        f"""
+        <div class="user-profile-box">
+            <div class="avatar-circle">DP</div>
+            <div class="user-name">Daya Purnavi</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    col_chat, col_citations = st.columns([7, 4], gap="large")
 
-    with col_chat:
-        if not st.session_state.messages:
+# --- TOP NAVBAR CONTROLS (positioned-fixed via CSS, zero layout height) ---
+col_nav_left, col_nav_right = st.columns([1, 9])
+with col_nav_left:
+    if st.button("☰", key="btn_mobile_open_sidebar"):
+        st.session_state.mobile_sidebar_open = True
+        st.rerun()
+
+with col_nav_right:
+    c_th, c_set = st.columns([1, 1])
+    with c_th:
+        theme_icon = "☀️" if is_dark else "🌙"
+        if st.button(theme_icon, key="btn_theme", help="Toggle Dark / Light Mode"):
+            st.session_state.theme = "light" if is_dark else "dark"
+            st.rerun()
+    with c_set:
+        if st.button("⚙️", key="btn_settings", help="Settings & Engine Config"):
+            show_settings_dialog()
+
+# Render mobile backdrop when sidebar is open on mobile
+if is_mobile_open:
+    st.markdown(
+        """
+        <div class="mobile-sidebar-backdrop" onclick="const b = document.querySelector('div.st-key-btn_mobile_close_sidebar button'); if(b) b.click();"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# --- MAIN CANVAS & MESSAGES ---
+cur_session = (
+    st.session_state.chat_sessions.get(st.session_state.current_session_id)
+    if st.session_state.current_session_id and st.session_state.current_session_id in st.session_state.chat_sessions
+    else None
+)
+messages = cur_session.get("messages", []) if cur_session else []
+
+# Exact Stitch Center Hero Section (when no messages)
+if not messages:
+    st.markdown(
+        f"""
+        <div class="stitch-hero">
+            <h1 class="stitch-hero-title">Where should we start?</h1>
+            <p class="stitch-hero-subtitle">Ask questions about your uploaded documents or attach medical records below.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    for msg in messages:
+        if msg["role"] == "user":
+            u_text = html.escape(str(msg.get("content", "")))
+            st.markdown(
+                f"""
+                <div class="user-msg-row">
+                    <div class="user-msg-bubble">{u_text}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            ans_raw = msg.get("content", "")
+            clean_ans = sanitize_final_response(ans_raw)
+            citations = msg.get("citations", [])
+
+            st.markdown('<div class="assistant-msg-row"><div class="assistant-msg-bubble">', unsafe_allow_html=True)
+            st.markdown(clean_ans)
+
+            # Action icons bar: 📋, 👍, 👎, 🔊, ⋯
             st.markdown(
                 """
-                <div class="structured-card" style="padding: 2rem;">
-                    <h3 style="margin-top: 0; color: #131b2e;">💬 Global Knowledge Chat</h3>
-                    <p style="color: #64748b; font-size: 0.92rem;">
-                        Ask questions across all indexed PDF documents and webpages. DocuMind AI will retrieve relevant passages across all sources and cite verified evidence.
-                    </p>
+                <div class="action-icons-bar">
+                    <span class="action-icon" title="Copy">📋</span>
+                    <span class="action-icon" title="Helpful">👍</span>
+                    <span class="action-icon" title="Not helpful">👎</span>
+                    <span class="action-icon" title="Read aloud">🔊</span>
+                    <span class="action-icon" title="More">⋯</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        for msg in st.session_state.messages:
-            if msg["role"] == "user":
-                t_str = msg.get("time", "Just now")
-                u_content = html.escape(str(msg.get("content", "")))
-                user_msg_html = (
-                    '<div class="user-msg-row">'
-                    '<div style="text-align: right; max-width: 82%;">'
-                    f'<div style="font-size: 0.75rem; color: #64748b; margin-bottom: 3px;">Ganesh • {t_str}</div>'
-                    f'<div class="user-msg-bubble">{u_content}</div>'
-                    '</div>'
-                    '</div>'
-                )
-                st.markdown(user_msg_html, unsafe_allow_html=True)
-            else:
-                citations = msg.get("citations", [])
-                latency_val = msg.get("latency", "350ms")
-                citation_tags = ""
+            # Citations
+            if citations:
+                cite_chips = []
                 for c in citations:
-                    if c.get("source_type") == "youtube":
-                        ts_url = c.get("timestamp_url") or c["source"]
-                        citation_tags += f'<a href="{ts_url}" target="_blank" rel="noopener noreferrer" style="background:#fee2e2; color:#dc2626; padding:2px 8px; border-radius:6px; font-size:0.75rem; text-decoration:none; font-weight:600; margin-right:4px;">▶ {c["formatted"]} ↗</a> '
-                    elif c.get("source_type") in ("url", "webpage"):
-                        citation_tags += f'<a href="{c["source"]}" target="_blank" rel="noopener noreferrer" style="background:#eef2ff; color:#4338ca; padding:2px 8px; border-radius:6px; font-size:0.75rem; text-decoration:none; font-weight:600; margin-right:4px;">🌐 {c["formatted"]} ↗</a> '
-                    else:
-                        citation_tags += f'<span style="background:#f1f5f9; color:#334155; padding:2px 8px; border-radius:6px; font-size:0.75rem; font-weight:600; margin-right:4px;">📌 {c["formatted"]}</span> '
+                    p_text = f" • Page {c.get('page', 1)}" if c.get("page") else ""
+                    s_name = c.get("source", "Document")
+                    cite_chips.append(f'<span class="citation-badge">📄 {s_name}{p_text}</span>')
+                st.markdown(f'<div class="citations-row">{"".join(cite_chips)}</div>', unsafe_allow_html=True)
 
-                home_bubble_html = format_chat_bubble_html(msg["content"])
-                meta_bar = (
-                    f'<div style="font-size: 0.78rem; color: #64748b; margin-bottom: 6px; display: flex; justify-content: space-between;">'
-                    f'<span>✓ Grounded in {len(citations)} source(s)</span>'
-                    f'<span>⚡ {latency_val}</span>'
-                    f'</div>'
+            if st.session_state.debug_mode and msg.get("debug_info"):
+                with st.expander("🛠️ Retrieval Diagnostics", expanded=False):
+                    st.json(msg["debug_info"])
+
+            st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+# --- STITCH BOTTOM INPUT DOCK ---
+with st.bottom:
+    active_docs = st.session_state.get("active_documents", [])
+    if active_docs:
+        col_widths = [1.5, 2.0]
+        for _ in active_docs[:3]:
+            col_widths.append(2.4)
+        total_used = sum(col_widths)
+        if total_used < 10:
+            col_widths.append(round(10 - total_used, 1))
+        dock_cols = st.columns(col_widths)
+
+        with dock_cols[0]:
+            with st.popover("✨ Models", use_container_width=True):
+                st.markdown("##### ⚡ Select AI Model")
+                model_options = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+                idx = model_options.index(st.session_state.selected_model) if st.session_state.selected_model in model_options else 0
+                sel = st.selectbox("Model", options=model_options, index=idx, label_visibility="collapsed")
+                if sel != st.session_state.selected_model:
+                    st.session_state.selected_model = sel
+                    st.rerun()
+        with dock_cols[1]:
+            active_key = st.session_state.groq_api_key or GROQ_API_KEY
+            is_cfg = is_groq_configured(active_key)
+            dot_color = "🟢" if is_cfg else "🔴"
+            with st.popover(f"🔑 Grok API {dot_color}", use_container_width=True):
+                st.markdown("##### 🔑 Groq API Engine")
+                new_k = st.text_input("Groq API Key", value=st.session_state.groq_api_key, type="password", placeholder="gsk_...")
+                if new_k.strip() != st.session_state.groq_api_key:
+                    st.session_state.groq_api_key = new_k.strip()
+                    update_groq_api_key(new_k.strip())
+                    st.toast("Groq API Key updated!", icon="🔑")
+                    st.rerun()
+
+        for d_idx, doc_item in enumerate(active_docs[:3]):
+            with dock_cols[2 + d_idx]:
+                raw_n = doc_item.get("name", "Document")
+                short_n = raw_n if len(raw_n) <= 15 else raw_n[:12] + "..."
+                if st.button(f"📄 {short_n}  ✕", key=f"btn_rm_doc_{d_idx}", help=f"Click to remove {raw_n}", use_container_width=True):
+                    removed = st.session_state.active_documents.pop(d_idx)
+                    try:
+                        unregister_source_by_name_or_hash(removed.get("source") or removed.get("name"))
+                    except Exception:
+                        pass
+                    if not st.session_state.active_documents:
+                        clear_knowledge_base()
+                    st.toast(f"Removed {raw_n} from question bar", icon="🗑️")
+                    st.rerun()
+    else:
+        c_m1, c_m2, c_m_sp = st.columns([1.6, 2.0, 6.4])
+        with c_m1:
+            with st.popover("✨ Models", use_container_width=True):
+                st.markdown("##### ⚡ Select AI Model")
+                model_options = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+                idx = model_options.index(st.session_state.selected_model) if st.session_state.selected_model in model_options else 0
+                sel = st.selectbox("Model", options=model_options, index=idx, label_visibility="collapsed")
+                if sel != st.session_state.selected_model:
+                    st.session_state.selected_model = sel
+                    st.rerun()
+        with c_m2:
+            active_key = st.session_state.groq_api_key or GROQ_API_KEY
+            is_cfg = is_groq_configured(active_key)
+            dot_color = "🟢" if is_cfg else "🔴"
+            with st.popover(f"🔑 Grok API {dot_color}", use_container_width=True):
+                st.markdown("##### 🔑 Groq API Engine")
+                new_k = st.text_input("Groq API Key", value=st.session_state.groq_api_key, type="password", placeholder="gsk_...")
+                if new_k.strip() != st.session_state.groq_api_key:
+                    st.session_state.groq_api_key = new_k.strip()
+                    update_groq_api_key(new_k.strip())
+                    st.toast("Groq API Key updated!", icon="🔑")
+                    st.rerun()
+
+    chat_submission = st.chat_input(
+        "Describe your symptoms or ask a question...",
+        accept_file="multiple",
+        file_type=["pdf", "docx", "txt", "md"],
+    )
+
+# Handle submission (from chat_input or queued_prompt)
+user_prompt_text = ""
+attached_files = []
+
+if st.session_state.queued_prompt:
+    user_prompt_text = st.session_state.queued_prompt
+    st.session_state.queued_prompt = None
+elif chat_submission:
+    if isinstance(chat_submission, str):
+        user_prompt_text = chat_submission
+    elif isinstance(chat_submission, dict):
+        user_prompt_text = chat_submission.get("text", "") or ""
+        attached_files = chat_submission.get("files", []) or []
+    else:
+        user_prompt_text = getattr(chat_submission, "text", "") or ""
+        attached_files = getattr(chat_submission, "files", []) or []
+
+# Ingest any files attached directly in chat_input (+ button)
+if attached_files:
+    file_tuples = [(f.getvalue(), f.name, compute_content_hash(f.getvalue())) for f in attached_files]
+    with st.spinner("Indexing attached document..."):
+        try:
+            chunks, stats = process_pdf_files(file_tuples, chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+            if chunks:
+                embeddings = get_embedding_model()
+                st.session_state.vector_store = add_documents_to_vector_store(
+                    st.session_state.vector_store, chunks, embeddings
                 )
-                cite_footer = f'<div style="margin-top: 8px; border-top: 1px solid #f1f5f9; padding-top: 6px;">{citation_tags}</div>' if citation_tags else ''
-                global_ai_msg = (
-                    '<div class="ai-msg-row">'
-                    '<div style="width: 34px; height: 34px; border-radius: 10px; background: #4338ca; color: #ffffff; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">✨</div>'
-                    '<div class="ai-msg-bubble" style="flex: 1;">'
-                    f'{meta_bar}'
-                    f'<div style="margin-bottom: 8px;">{home_bubble_html}</div>'
-                    f'{cite_footer}'
-                    '</div>'
-                    '</div>'
-                )
-                st.markdown(global_ai_msg, unsafe_allow_html=True)
-                if debug_mode_enabled and msg.get("debug_info"):
-                    render_retrieval_debug_expander(msg["debug_info"])
+                save_vector_store(st.session_state.vector_store)
+                for pf in stats["processed_files"]:
+                    st_type = "pdf" if pf["filename"].lower().endswith(".pdf") else "document"
+                    register_source(
+                        source=pf["filename"],
+                        source_type=st_type,
+                        title=pf["filename"],
+                        content_hash=pf.get("content_hash", ""),
+                        chunk_count=pf["chunks"],
+                        total_pages=pf["pages"],
+                        metadata={"indexed_at": datetime.now().isoformat()},
+                    )
+                    # Fixed in question bar: only removed when user clicks ✕!
+                    if not any(d.get("name") == pf["filename"] for d in st.session_state.active_documents):
+                        st.session_state.active_documents.append({
+                            "name": pf["filename"],
+                            "source": pf["filename"],
+                            "pages": pf.get("pages", 1),
+                            "chunks": pf.get("chunks", 0),
+                        })
+                st.toast(f"Document pinned to question bar! (Remove with ✕)", icon="📎")
+        except Exception as file_err:
+            st.error(f"Error reading attached document: {file_err}")
 
-    with col_citations:
-        citation_header_card = (
-            '<div class="structured-card">'
-            '<div class="card-header-bar">'
-            '<div class="card-title-group">'
-            '<span>🔎</span>'
-            '<span>Latest Citations</span>'
-            '</div>'
-            '</div>'
-        )
-        st.markdown(citation_header_card, unsafe_allow_html=True)
+    # If the user only uploaded a file without asking a question, rerun immediately so the badge shows!
+    if not user_prompt_text.strip():
+        st.rerun()
 
-        latest_cites = []
-        for msg in reversed(st.session_state.messages):
-            if msg["role"] == "assistant" and msg.get("citations"):
-                latest_cites = msg["citations"]
-                break
+# Process User Question
+if user_prompt_text.strip():
+    # If no session active, create one now
+    if not st.session_state.current_session_id or st.session_state.current_session_id not in st.session_state.chat_sessions:
+        new_session_id = f"session_{len(st.session_state.chat_sessions) + 1}_{int(time.time())}"
+        st.session_state.chat_sessions[new_session_id] = {
+            "title": user_prompt_text[:24].capitalize(),
+            "messages": [],
+            "created_at": datetime.now().strftime("%I:%M %p"),
+        }
+        st.session_state.current_session_id = new_session_id
 
-        if latest_cites:
-            for idx, c in enumerate(latest_cites[:6], start=1):
-                src_tp = c.get("source_type")
-                if src_tp == "youtube":
-                    loc = f"{c.get('timestamp_formatted', 'Video')}"
-                    tag_bg = "background: #fee2e2; color: #dc2626;"
-                    open_lnk = f'<a href="{c.get("timestamp_url") or c["source"]}" target="_blank" rel="noopener noreferrer" style="font-size: 0.76rem; font-weight: 600; color: #dc2626; text-decoration: underline; margin-top: 4px; display: inline-block;">▶ Open Video at {loc} ↗</a>'
-                elif src_tp in ("url", "webpage"):
-                    loc = f"Section: {c.get('heading', 'Web')}"
-                    tag_bg = "background: #e0e7ff; color: #4338ca;"
-                    open_lnk = f'<a href="{c["source"]}" target="_blank" rel="noopener noreferrer" style="font-size: 0.76rem; font-weight: 600; color: #4338ca; text-decoration: underline; margin-top: 4px; display: inline-block;">Open Webpage ↗</a>'
-                else:
-                    loc = f"Page {c.get('page', 1)}"
-                    tag_bg = "background: #f1f5f9; color: #334155;"
-                    open_lnk = ""
+    cur_sess = st.session_state.chat_sessions[st.session_state.current_session_id]
+    cur_time = datetime.now().strftime("%I:%M %p")
+    cur_sess["messages"].append({
+        "role": "user",
+        "content": user_prompt_text,
+        "time": cur_time,
+    })
 
-                st.markdown(
-                    f"""
-                    <div class="source-citation-card">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <span style="font-weight: 750; font-size: 0.85rem; color: #131b2e;">{idx}. {c.get('title') or c['source']}</span>
-                            <span style="font-size: 0.72rem; font-weight: 600; {tag_bg} padding: 2px 6px; border-radius: 4px;">{loc}</span>
-                        </div>
-                        <div style="font-size: 0.8rem; color: #475569;">"{c.get('snippet', '')}"</div>
-                        {open_lnk}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.caption("Ask a cross-document question to view verified evidence passages.")
+    # Auto update session title
+    if len(cur_sess["messages"]) <= 2:
+        clean_title = user_prompt_text.strip().capitalize()
+        if len(clean_title) > 26:
+            clean_title = clean_title[:23] + "..."
+        cur_sess["title"] = clean_title
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    # Check Groq Key
+    active_key = st.session_state.groq_api_key or GROQ_API_KEY
+    if not is_groq_configured(active_key):
+        cur_sess["messages"].append({
+            "role": "assistant",
+            "content": "⚠️ **Groq API Key Required**\nPlease click **⚙️** in the top navbar or **🔑 Grok API** to configure your free Groq API key.",
+            "time": datetime.now().strftime("%I:%M %p"),
+            "citations": [],
+        })
+        st.rerun()
 
-    # Universal Chat Input Dock
-    global_query = st.session_state.pending_query or st.chat_input("Ask anything across your documents and websites...")
-    st.session_state.pending_query = None
-
-    if global_query:
-        if not st.session_state.kb_stats["processed"] or st.session_state.vector_store is None:
-            st.warning("⚠️ Please upload documents or add a website in the sidebar before querying.")
-        elif not is_groq_configured(active_key):
-            st.error("⚠️ Groq API key is missing or invalid. Please configure it in the sidebar.")
-        else:
-            cur_time_str = datetime.now().strftime("%I:%M %p")
-            st.session_state.messages.append({"role": "user", "content": global_query, "time": cur_time_str})
-            t0 = time.time()
-
-            norm_gq = " ".join(global_query.strip().lower().split())
+    # Query Knowledge Base & AI Engine (Guaranteed to answer all questions)
+    with st.spinner("Analyzing & generating response..."):
+        try:
+            norm_q = " ".join(user_prompt_text.strip().lower().split())
             cache_key = (
-                "global_kb",
-                "all_indexed_sources",
-                norm_gq,
-                "cross_source",
-                answer_mode,
+                "chat_kb",
+                norm_q,
+                st.session_state.answer_mode,
+                st.session_state.top_k,
+                st.session_state.selected_model,
                 RAG_PIPELINE_VERSION,
-                top_k,
+                bool(st.session_state.vector_store is not None),
             )
 
-            if "query_cache" not in st.session_state:
-                st.session_state.query_cache = {}
-
             if cache_key in st.session_state.query_cache:
-                res = st.session_state.query_cache[cache_key]
-                elapsed_ms = 5
-                clean_ans = sanitize_final_response(res.get("answer", ""))
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": clean_ans,
-                    "citations": res.get("citations", []),
-                    "latency": f"{elapsed_ms}ms (cached)",
-                    "debug_info": res.get("debug_info"),
-                })
-                st.rerun()
+                ans_text, citations = st.session_state.query_cache[cache_key]
+            else:
+                ans_text = ""
+                citations = []
 
-            with st.spinner("Searching across all sources..."):
-                try:
-                    res = query_rag_pipeline(
+                if st.session_state.vector_store is not None:
+                    # 1. Attempt RAG grounded query against verified documents
+                    rag_res = query_rag_pipeline(
                         vector_store=st.session_state.vector_store,
-                        question=global_query,
-                        top_k=top_k,
+                        question=user_prompt_text,
+                        top_k=st.session_state.top_k,
                         llm_model=st.session_state.selected_model,
                         api_key=active_key,
-                        source_filter=None,  # Cross-document general mode
-                        answer_mode=answer_mode,
+                        source_filter=None,
+                        source_type="pdf",
+                        answer_mode=st.session_state.answer_mode,
                     )
-                    st.session_state.query_cache[cache_key] = res
-                    clean_ans = sanitize_final_response(res.get("answer", ""))
-                    elapsed_ms = int((time.time() - t0) * 1000)
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": clean_ans,
-                        "citations": res.get("citations", []),
-                        "latency": f"{elapsed_ms}ms",
-                        "debug_info": res.get("debug_info"),
-                    })
-                    st.rerun()
-                except Exception as g_err:
-                    st.error(f"Failed to generate answer: {str(g_err)}")
+
+                    # If RAG found document evidence and provided a factual answer
+                    if not rag_res.get("is_refusal") and rag_res.get("answer"):
+                        ans_text = rag_res["answer"]
+                        citations = rag_res.get("citations", [])
+                    else:
+                        # Out-of-document or general AI question (e.g. Deep Learning, NumPy, Scikit-learn, Pandas):
+                        # Answer authoritatively via AI knowledge instead of refusing
+                        ans_text = get_general_ai_answer(
+                            question=user_prompt_text,
+                            llm_model=st.session_state.selected_model,
+                            api_key=active_key,
+                            has_docs=True,
+                        )
+                        citations = []
+                else:
+                    # 2. No documents uploaded yet: answer directly as comprehensive AI assistant
+                    ans_text = get_general_ai_answer(
+                        question=user_prompt_text,
+                        llm_model=st.session_state.selected_model,
+                        api_key=active_key,
+                        has_docs=False,
+                    )
+                    citations = []
+
+                st.session_state.query_cache[cache_key] = (ans_text, citations)
+
+            cur_sess["messages"].append({
+                "role": "assistant",
+                "content": ans_text,
+                "citations": citations,
+                "time": datetime.now().strftime("%I:%M %p"),
+            })
+            st.rerun()
+        except Exception as query_err:
+            cur_sess["messages"].append({
+                "role": "assistant",
+                "content": f"❌ Error retrieving answer: {str(query_err)}",
+                "time": datetime.now().strftime("%I:%M %p"),
+                "citations": [],
+            })
+            st.rerun()

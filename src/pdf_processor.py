@@ -37,30 +37,21 @@ def extract_pages_from_pdf(
     computed_hash = content_hash
 
     try:
+        raw_bytes: bytes = b""
         if isinstance(file_source, (str, Path)):
             path = Path(file_source)
             if not path.exists():
                 raise PDFProcessingError(f"File not found: {path}")
-            # Gracefully handle 0-byte empty file without PyMuPDF crash
             if path.stat().st_size == 0:
                 return []
             if not filename or filename == "document.pdf":
                 filename = path.name
             raw_bytes = path.read_bytes()
-            if not computed_hash:
-                computed_hash = compute_content_hash(raw_bytes)
-            doc = pymupdf.open(stream=raw_bytes, filetype="pdf")
-
         elif isinstance(file_source, bytes):
-            # Gracefully handle 0-byte empty stream
             if len(file_source) == 0:
                 return []
-            if not computed_hash:
-                computed_hash = compute_content_hash(file_source)
-            doc = pymupdf.open(stream=file_source, filetype="pdf")
-
+            raw_bytes = file_source
         elif hasattr(file_source, "read"):
-            # File-like object (e.g. Streamlit UploadedFile)
             content = file_source.read()
             if hasattr(file_source, "seek"):
                 file_source.seek(0)
@@ -68,13 +59,64 @@ def extract_pages_from_pdf(
                 return []
             if hasattr(file_source, "name") and file_source.name:
                 filename = file_source.name
-            if not computed_hash:
-                computed_hash = compute_content_hash(content)
-            doc = pymupdf.open(stream=content, filetype="pdf")
-
+            raw_bytes = content
         else:
             raise PDFProcessingError(f"Unsupported file source type: {type(file_source)}")
 
+        if not computed_hash:
+            computed_hash = compute_content_hash(raw_bytes)
+
+        fname_lower = filename.lower()
+
+        # Support Plain Text & Markdown Documents (.txt, .md, .text)
+        if fname_lower.endswith((".txt", ".md", ".text")):
+            text = raw_bytes.decode("utf-8", errors="replace").strip()
+            if not text:
+                return []
+            doc_metadata: Dict[str, Any] = {
+                "source": filename,
+                "source_type": "document",
+                "title": filename,
+                "page": 1,
+                "total_pages": 1,
+            }
+            if computed_hash:
+                doc_metadata["content_hash"] = computed_hash
+            return [Document(page_content=text, metadata=doc_metadata)]
+
+        # Support Microsoft Word Documents (.docx)
+        if fname_lower.endswith(".docx"):
+            import zipfile
+            import xml.etree.ElementTree as ET
+            import io
+            try:
+                with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
+                    xml_content = z.read("word/document.xml")
+                tree = ET.fromstring(xml_content)
+                ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+                paragraphs = []
+                for p in tree.iter(f"{{{ns['w']}}}p"):
+                    texts = [node.text for node in p.iter(f"{{{ns['w']}}}t") if node.text]
+                    if texts:
+                        paragraphs.append("".join(texts))
+                docx_text = "\n\n".join(paragraphs).strip()
+                if not docx_text:
+                    return []
+                doc_metadata = {
+                    "source": filename,
+                    "source_type": "document",
+                    "title": filename,
+                    "page": 1,
+                    "total_pages": 1,
+                }
+                if computed_hash:
+                    doc_metadata["content_hash"] = computed_hash
+                return [Document(page_content=docx_text, metadata=doc_metadata)]
+            except Exception as docx_err:
+                raise PDFProcessingError(f"Failed to extract DOCX text from {filename}: {str(docx_err)}") from docx_err
+
+        # Standard PDF Processing via PyMuPDF
+        doc = pymupdf.open(stream=raw_bytes, filetype="pdf")
         total_pages = doc.page_count
         if total_pages == 0:
             doc.close()
@@ -86,7 +128,7 @@ def extract_pages_from_pdf(
             cleaned_text = text.strip()
 
             if cleaned_text:
-                doc_metadata: Dict[str, Any] = {
+                doc_metadata = {
                     "source": filename,
                     "source_type": "pdf",
                     "title": filename,
@@ -150,7 +192,7 @@ def chunk_documents(
         if "title" not in chunk.metadata:
             chunk.metadata["title"] = chunk.metadata.get("source", "Untitled Document")
         if "page" not in chunk.metadata:
-            chunk.metadata["page"] = 1 if chunk.metadata.get("source_type") == "pdf" else None
+            chunk.metadata["page"] = 1 if chunk.metadata.get("source_type") in ("pdf", "document") else None
 
     return chunks
 

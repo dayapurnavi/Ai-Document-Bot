@@ -99,6 +99,7 @@ def register_source(
     content_hash: str = "",
     chunk_count: int = 0,
     total_pages: Optional[int] = None,
+    metadata: Optional[Dict[str, Any]] = None,
     folder_path: Path = VECTORSTORE_DIR,
 ) -> Dict[str, Any]:
     """Register or update a source record in the persistent registry."""
@@ -115,6 +116,7 @@ def register_source(
         "content_hash": content_hash,
         "chunk_count": chunk_count,
         "total_pages": total_pages,
+        "metadata": metadata or {},
         "created_at": reg.get("sources", {}).get(source_id, {}).get("created_at", now_iso),
         "updated_at": now_iso,
     }
