@@ -85,8 +85,8 @@ def init_session_state():
         )
     if "top_k" not in st.session_state:
         st.session_state.top_k = DEFAULT_TOP_K
-    if "answer_mode" not in st.session_state or st.session_state.answer_mode == "STRICT_SOURCE":
-        st.session_state.answer_mode = "SOURCE_FIRST_WITH_FALLBACK"
+    if "answer_mode" not in st.session_state:
+        st.session_state.answer_mode = "STRICT_SOURCE"
     if "debug_mode" not in st.session_state:
         st.session_state.debug_mode = False
     if "vector_store" not in st.session_state:
@@ -765,6 +765,131 @@ CSS = f"""
         font-weight: 400 !important;
     }}
 
+    /* Welcome Architecture & Getting Started Guide Section */
+    .welcome-guide-container {{
+        max-width: 820px;
+        margin: 1.5rem auto 2.5rem auto;
+        padding: 0 1rem;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }}
+    .welcome-header {{
+        text-align: left;
+        margin-bottom: 1.5rem;
+    }}
+    .welcome-title {{
+        font-size: {'2.25rem' if is_dark else '2.125rem'} !important;
+        font-weight: 800 !important;
+        color: {'#3b82f6' if is_dark else '#2563eb'} !important;
+        margin: 0 0 0.5rem 0 !important;
+        letter-spacing: -0.025em !important;
+        line-height: 1.2 !important;
+    }}
+    .welcome-subtitle {{
+        font-size: {'0.9375rem' if is_dark else '0.9375rem'} !important;
+        color: {'#94a3b8' if is_dark else '#64748b'} !important;
+        margin: 0 !important;
+        font-weight: 400 !important;
+    }}
+    .rag-architecture-card {{
+        background-color: {'#0f172a' if is_dark else '#ffffff'};
+        border: 1px solid {'#1e293b' if is_dark else '#e2e8f0'};
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: {'0 4px 20px rgba(0, 0, 0, 0.25)' if is_dark else '0 4px 16px rgba(0, 0, 0, 0.05)'};
+    }}
+    .rag-arch-title {{
+        font-size: 1.25rem !important;
+        font-weight: 700 !important;
+        color: {'#f8fafc' if is_dark else '#0f172a'} !important;
+        margin: 0 0 10px 0 !important;
+    }}
+    .rag-arch-desc {{
+        font-size: 0.875rem !important;
+        line-height: 1.55 !important;
+        color: {'#94a3b8' if is_dark else '#64748b'} !important;
+        margin: 0 0 18px 0 !important;
+    }}
+    .rag-flow-container {{
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        row-gap: 10px;
+    }}
+    .rag-pill {{
+        background-color: {'#0369a126' if is_dark else '#e0f2fe'};
+        border: 1px solid {'#0284c7' if is_dark else '#38bdf8'};
+        color: {'#38bdf8' if is_dark else '#0284c7'};
+        font-size: 0.75rem;
+        font-weight: 500;
+        padding: 5px 12px;
+        border-radius: 9999px;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+    }}
+    .rag-arrow {{
+        color: {'#64748b' if is_dark else '#94a3b8'};
+        font-size: 0.8125rem;
+        font-weight: 600;
+    }}
+    .get-started-section {{
+        margin-top: 24px;
+    }}
+    .get-started-title {{
+        font-size: 1.125rem !important;
+        font-weight: 700 !important;
+        color: {'#f8fafc' if is_dark else '#0f172a'} !important;
+        margin: 0 0 16px 0 !important;
+    }}
+    .get-started-grid {{
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 20px;
+        margin-bottom: 20px;
+    }}
+    .get-started-col {{
+        display: flex;
+        flex-direction: column;
+    }}
+    .step-num-title {{
+        font-size: 0.9375rem;
+        font-weight: 700;
+        color: {'#f8fafc' if is_dark else '#0f172a'};
+        margin-bottom: 6px;
+    }}
+    .step-desc {{
+        font-size: 0.84375rem;
+        line-height: 1.45;
+        color: {'#94a3b8' if is_dark else '#64748b'};
+    }}
+    .step-desc strong {{
+        color: {'#ffffff' if is_dark else '#0f172a'};
+        font-weight: 600;
+    }}
+    .get-started-banner {{
+        background-color: {'#0c2b45' if is_dark else '#f0fdf4'};
+        border: 1px solid {'#0369a1' if is_dark else '#86efac'};
+        border-radius: 10px;
+        padding: 14px 18px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 14px;
+    }}
+    .banner-icon {{
+        font-size: 1.125rem;
+    }}
+    .banner-text {{
+        font-size: 0.875rem;
+        color: {'#38bdf8' if is_dark else '#0284c7'};
+    }}
+    .banner-text strong {{
+        color: {'#60a5fa' if is_dark else '#0369a1'};
+        font-weight: 700;
+    }}
+
     /* ============================================================
        SECTION 6 — STITCH BOTTOM INPUT DOCK
     ============================================================ */
@@ -1137,6 +1262,22 @@ CSS = f"""
             font-size: 0.875rem !important; /* 14px */
             line-height: 1.45 !important;
             max-width: 100% !important;
+        }}
+
+        .welcome-guide-container {{
+            max-width: 100% !important;
+            margin: 1.5rem auto 1.5rem auto !important;
+            padding: 0 10px !important;
+        }}
+        .welcome-title {{
+            font-size: 1.75rem !important;
+        }}
+        .rag-architecture-card {{
+            padding: 16px 14px !important;
+        }}
+        .get-started-grid {{
+            grid-template-columns: 1fr !important;
+            gap: 14px !important;
         }}
 
         /* Mobile Bottom Dock */
@@ -1535,13 +1676,61 @@ cur_session = (
 )
 messages = cur_session.get("messages", []) if cur_session else []
 
-# Exact Stitch Center Hero Section (when no messages)
+# Welcome Architecture & Getting Started Guide (displayed when no messages)
 if not messages:
     st.markdown(
         f"""
-        <div class="stitch-hero">
-            <h1 class="stitch-hero-title">Where should we start?</h1>
-            <p class="stitch-hero-subtitle">Ask questions about your uploaded documents or attach medical records below.</p>
+        <div class="welcome-guide-container">
+            <div class="welcome-header">
+                <h1 class="welcome-title">DocuMind AI</h1>
+                <p class="welcome-subtitle">AI-Powered Document Question Answering System with Grounded Citations</p>
+            </div>
+
+            <div class="rag-architecture-card">
+                <h2 class="rag-arch-title">Enterprise RAG Architecture</h2>
+                <p class="rag-arch-desc">
+                    DocuMind AI transforms complex enterprise documents into an instant semantic knowledge base. Every answer is strictly grounded in your retrieved document chunks and guarded against hallucination.
+                </p>
+                <div class="rag-flow-container">
+                    <span class="rag-pill">1. PDF Upload</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">2. PyMuPDF Extraction</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">3. Recursive Chunking</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">4. MiniLM Embeddings</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">5. FAISS Vector DB</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">6. Semantic Search</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">7. Groq Grounded LLM</span>
+                    <span class="rag-arrow">→</span>
+                    <span class="rag-pill">8. Verified Page Citations</span>
+                </div>
+            </div>
+
+            <div class="get-started-section">
+                <h3 class="get-started-title">🚀 How to Get Started:</h3>
+                <div class="get-started-grid">
+                    <div class="get-started-col">
+                        <div class="step-num-title">1. Upload Documents</div>
+                        <div class="step-desc">Upload one or multiple PDF documents via the sidebar.</div>
+                    </div>
+                    <div class="get-started-col">
+                        <div class="step-num-title">2. Process & Index</div>
+                        <div class="step-desc">Click <strong>Process PDFs</strong> to extract text and generate FAISS vectors.</div>
+                    </div>
+                    <div class="get-started-col">
+                        <div class="step-num-title">3. Ask with Confidence</div>
+                        <div class="step-desc">Ask natural language questions and receive cited, grounded answers.</div>
+                    </div>
+                </div>
+                <div class="get-started-banner">
+                    <span class="banner-icon">👉</span>
+                    <span class="banner-text">Upload your PDF files in the sidebar and click <strong>Process PDFs</strong> to start.</span>
+                </div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1808,23 +1997,12 @@ if user_prompt_text.strip():
                         ans_text = rag_res["answer"]
                         citations = rag_res.get("citations", [])
                     else:
-                        # Out-of-document or general AI question (e.g. Deep Learning, NumPy, Scikit-learn, Pandas):
-                        # Answer authoritatively via AI knowledge instead of refusing
-                        ans_text = get_general_ai_answer(
-                            question=user_prompt_text,
-                            llm_model=st.session_state.selected_model,
-                            api_key=active_key,
-                            has_docs=True,
-                        )
+                        # Refuse when not documented in the indexed PDF
+                        ans_text = "I couldn't find that information in the indexed PDF content."
                         citations = []
                 else:
-                    # 2. No documents uploaded yet: answer directly as comprehensive AI assistant
-                    ans_text = get_general_ai_answer(
-                        question=user_prompt_text,
-                        llm_model=st.session_state.selected_model,
-                        api_key=active_key,
-                        has_docs=False,
-                    )
+                    # No documents uploaded yet: notify user to upload PDF
+                    ans_text = "I couldn't find that information in the indexed PDF content. Please upload your PDF files in the sidebar and click **Process PDFs** to start."
                     citations = []
 
                 st.session_state.query_cache[cache_key] = (ans_text, citations)
