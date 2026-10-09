@@ -222,9 +222,10 @@ CSS = f"""
        Remove every built-in Streamlit visual that is NOT in Stitch
     ============================================================ */
 
-    /* Hide Streamlit header, footer, decoration, toolbar, collapse buttons */
+    /* Hide ALL Streamlit Cloud watermarks, badges, footer, header, toolbar, buttons */
     #MainMenu,
     footer,
+    header,
     header[data-testid="stHeader"],
     [data-testid="stDecoration"],
     [data-testid="stToolbar"],
@@ -234,9 +235,25 @@ CSS = f"""
     [data-testid="stLogoSpacer"],
     [data-testid="stSidebarResizeHandle"],
     [data-testid="stAppDeployButton"],
-    [data-testid="stStatusWidget"] {{
+    .stDeployButton,
+    [data-testid="stStatusWidget"],
+    div[class*="viewerBadge"],
+    div[class*="ViewerBadge"],
+    a[class*="viewerBadge"],
+    a[class*="ViewerBadge"],
+    .viewerBadge_container__1QSob,
+    .viewerBadge_link__1S137,
+    #manage-app-button,
+    button[title="Manage app"],
+    [data-testid="manage-app-button"],
+    [data-testid="stManageAppButton"],
+    .reportview-container footer,
+    .reportview-container .main footer,
+    div[data-testid="stCustomComponentV1"] iframe,
+    svg[class*="streamlit"] {{
         display: none !important;
         visibility: hidden !important;
+        opacity: 0 !important;
         height: 0 !important;
         min-height: 0 !important;
         width: 0 !important;
@@ -244,6 +261,8 @@ CSS = f"""
         padding: 0 !important;
         margin: 0 !important;
         pointer-events: none !important;
+        position: absolute !important;
+        left: -9999px !important;
     }}
 
     /* Zero out ALL default Streamlit spacing/padding/margins */
@@ -1424,6 +1443,43 @@ CSS = f"""
 """
 
 st.markdown(CSS, unsafe_allow_html=True)
+st.markdown(
+    """
+    <script>
+    (function() {
+        function purgeStreamlitBadges() {
+            const selectors = [
+                'div[class*="viewerBadge"]',
+                'a[class*="viewerBadge"]',
+                'div[class*="ViewerBadge"]',
+                'a[class*="ViewerBadge"]',
+                '.viewerBadge_container__1QSob',
+                '.viewerBadge_link__1S137',
+                '#manage-app-button',
+                'button[title="Manage app"]',
+                '[data-testid="manage-app-button"]',
+                '[data-testid="stManageAppButton"]',
+                '.stDeployButton',
+                'footer',
+                '#MainMenu'
+            ];
+            selectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    el.style.display = 'none';
+                    el.style.visibility = 'hidden';
+                    el.style.opacity = '0';
+                    el.remove();
+                });
+            });
+        }
+        purgeStreamlitBadges();
+        const obs = new MutationObserver(purgeStreamlitBadges);
+        obs.observe(document.body, { childList: true, subtree: true });
+    })();
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 
