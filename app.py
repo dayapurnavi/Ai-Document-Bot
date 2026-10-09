@@ -1678,63 +1678,59 @@ messages = cur_session.get("messages", []) if cur_session else []
 
 # Welcome Architecture & Getting Started Guide (displayed when no messages)
 if not messages:
-    st.markdown(
-        f"""
-        <div class="welcome-guide-container">
-            <div class="welcome-header">
-                <h1 class="welcome-title">DocuMind AI</h1>
-                <p class="welcome-subtitle">AI-Powered Document Question Answering System with Grounded Citations</p>
-            </div>
-
-            <div class="rag-architecture-card">
-                <h2 class="rag-arch-title">Enterprise RAG Architecture</h2>
-                <p class="rag-arch-desc">
-                    DocuMind AI transforms complex enterprise documents into an instant semantic knowledge base. Every answer is strictly grounded in your retrieved document chunks and guarded against hallucination.
-                </p>
-                <div class="rag-flow-container">
-                    <span class="rag-pill">1. PDF Upload</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">2. PyMuPDF Extraction</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">3. Recursive Chunking</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">4. MiniLM Embeddings</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">5. FAISS Vector DB</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">6. Semantic Search</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">7. Groq Grounded LLM</span>
-                    <span class="rag-arrow">→</span>
-                    <span class="rag-pill">8. Verified Page Citations</span>
-                </div>
-            </div>
-
-            <div class="get-started-section">
-                <h3 class="get-started-title">🚀 How to Get Started:</h3>
-                <div class="get-started-grid">
-                    <div class="get-started-col">
-                        <div class="step-num-title">1. Upload Documents</div>
-                        <div class="step-desc">Upload one or multiple PDF documents via the sidebar.</div>
-                    </div>
-                    <div class="get-started-col">
-                        <div class="step-num-title">2. Process & Index</div>
-                        <div class="step-desc">Click <strong>Process PDFs</strong> to extract text and generate FAISS vectors.</div>
-                    </div>
-                    <div class="get-started-col">
-                        <div class="step-num-title">3. Ask with Confidence</div>
-                        <div class="step-desc">Ask natural language questions and receive cited, grounded answers.</div>
-                    </div>
-                </div>
-                <div class="get-started-banner">
-                    <span class="banner-icon">👉</span>
-                    <span class="banner-text">Upload your PDF files in the sidebar and click <strong>Process PDFs</strong> to start.</span>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    welcome_html = (
+        '<div class="welcome-guide-container">'
+        '<div class="welcome-header">'
+        '<h1 class="welcome-title">DocuMind AI</h1>'
+        '<p class="welcome-subtitle">AI-Powered Document Question Answering System with Grounded Citations</p>'
+        '</div>'
+        '<div class="rag-architecture-card">'
+        '<h2 class="rag-arch-title">Enterprise RAG Architecture</h2>'
+        '<p class="rag-arch-desc">'
+        'DocuMind AI transforms complex enterprise documents into an instant semantic knowledge base. Every answer is strictly grounded in your retrieved document chunks and guarded against hallucination.'
+        '</p>'
+        '<div class="rag-flow-container">'
+        '<span class="rag-pill">1. PDF Upload</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">2. PyMuPDF Extraction</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">3. Recursive Chunking</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">4. MiniLM Embeddings</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">5. FAISS Vector DB</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">6. Semantic Search</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">7. Groq Grounded LLM</span>'
+        '<span class="rag-arrow">→</span>'
+        '<span class="rag-pill">8. Verified Page Citations</span>'
+        '</div>'
+        '</div>'
+        '<div class="get-started-section">'
+        '<h3 class="get-started-title">🚀 How to Get Started:</h3>'
+        '<div class="get-started-grid">'
+        '<div class="get-started-col">'
+        '<div class="step-num-title">1. Upload Documents</div>'
+        '<div class="step-desc">Upload one or multiple PDF documents via the sidebar.</div>'
+        '</div>'
+        '<div class="get-started-col">'
+        '<div class="step-num-title">2. Process & Index</div>'
+        '<div class="step-desc">Click <strong>Process PDFs</strong> to extract text and generate FAISS vectors.</div>'
+        '</div>'
+        '<div class="get-started-col">'
+        '<div class="step-num-title">3. Ask with Confidence</div>'
+        '<div class="step-desc">Ask natural language questions and receive cited, grounded answers.</div>'
+        '</div>'
+        '</div>'
+        '<div class="get-started-banner">'
+        '<span class="banner-icon">👉</span>'
+        '<span class="banner-text">Upload your PDF files in the sidebar and click <strong>Process PDFs</strong> to start.</span>'
+        '</div>'
+        '</div>'
+        '</div>'
     )
+    st.markdown(welcome_html, unsafe_allow_html=True)
 else:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     for msg in messages:
