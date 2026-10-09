@@ -58,13 +58,31 @@ from src.rag_chain import (
     RAG_PIPELINE_VERSION,
 )
 
-# Page Configuration - Sidebar Always Expanded for Two-Column Layout
 st.set_page_config(
-    page_title="DocuMind AI Assistant",
-    page_icon="🩺",
+    page_title="My AI Assistant",
+    page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
+
+st.markdown("""
+<style>
+/* Hide Streamlit top header */
+header[data-testid="stHeader"] {
+    display: none;
+}
+
+/* Hide Streamlit footer */
+footer {
+    visibility: hidden;
+}
+
+/* Hide Streamlit deploy button */
+.stDeployButton {
+    display: none;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
 # --- SESSION STATE INITIALIZATION & STATE HANDLING ---
