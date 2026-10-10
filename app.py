@@ -14,7 +14,6 @@
   * Pill container (#16181d / #FBFBFC, 16px rounded-2xl, shadow-xl)
   * Document upload (+) attachment inside chat input
   * Models selector chip popover
-  * Grok API key chip popover with emerald status indicator
   * Lavender circular send button with purple arrow
 """
 
@@ -215,11 +214,6 @@ chip_bg = "#1f232b" if is_dark else "#ffffff"
 chip_border = "#2e3440" if is_dark else "rgba(229, 231, 235, 0.6)"
 chip_hover = "#282d37" if is_dark else "#f3f4f6"
 chip_text = "#e4e4e7" if is_dark else "#4b5563"
-
-chip_grok_bg = "#1a1d24" if is_dark else "#ffffff"
-chip_grok_border = "#2d323e" if is_dark else "rgba(229, 231, 235, 0.6)"
-chip_grok_hover = "#232731" if is_dark else "#f3f4f6"
-chip_grok_text = "#d4d4d8" if is_dark else "#4b5563"
 
 send_btn_bg = "#f1ebf9" if is_dark else "#EDE9FE"
 send_btn_hover = "#e7dcf5" if is_dark else "#E4DEFD"
@@ -966,7 +960,7 @@ CSS = f"""
     div[data-testid="stBottom"] div[data-testid="stLayoutWrapper"] {{
         background: transparent !important;
     }}
-    /* Horizontal block with Models & Grok API chips & Active Docs */
+    /* Horizontal block with Models chip & Active Docs */
     div[data-testid="stBottom"] div[data-testid="stHorizontalBlock"] {{
         max-width: 820px !important;
         margin: 0 auto 8px auto !important;
@@ -985,7 +979,7 @@ CSS = f"""
         background: transparent !important;
     }}
 
-    /* Models / Grok chip popovers */
+    /* Models chip popover */
     div[data-testid="stPopover"] button {{
         background-color: {chip_bg} !important;
         border: 1px solid {chip_border} !important;
