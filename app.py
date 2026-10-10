@@ -1861,7 +1861,7 @@ else:
 with st.bottom:
     active_docs = st.session_state.get("active_documents", [])
     if active_docs:
-        col_widths = [1.5, 2.0]
+        col_widths = [1.5]
         for _ in active_docs[:3]:
             col_widths.append(2.4)
         total_used = sum(col_widths)
@@ -1878,21 +1878,9 @@ with st.bottom:
                 if sel != st.session_state.selected_model:
                     st.session_state.selected_model = sel
                     st.rerun()
-        with dock_cols[1]:
-            active_key = st.session_state.groq_api_key or GROQ_API_KEY
-            is_cfg = is_groq_configured(active_key)
-            dot_color = "🟢" if is_cfg else "🔴"
-            with st.popover(f"🔑 Grok API {dot_color}", use_container_width=True):
-                st.markdown("##### 🔑 Groq API Engine")
-                new_k = st.text_input("Groq API Key", value=st.session_state.groq_api_key, type="password", placeholder="gsk_...")
-                if new_k.strip() != st.session_state.groq_api_key:
-                    st.session_state.groq_api_key = new_k.strip()
-                    update_groq_api_key(new_k.strip())
-                    st.toast("Groq API Key updated!", icon="🔑")
-                    st.rerun()
 
         for d_idx, doc_item in enumerate(active_docs[:3]):
-            with dock_cols[2 + d_idx]:
+            with dock_cols[1 + d_idx]:
                 raw_n = doc_item.get("name", "Document")
                 short_n = raw_n if len(raw_n) <= 15 else raw_n[:12] + "..."
                 if st.button(f"📄 {short_n}  ✕", key=f"btn_rm_doc_{d_idx}", help=f"Click to remove {raw_n}", use_container_width=True):
@@ -1906,7 +1894,7 @@ with st.bottom:
                     st.toast(f"Removed {raw_n} from question bar", icon="🗑️")
                     st.rerun()
     else:
-        c_m1, c_m2, c_m_sp = st.columns([1.6, 2.0, 6.4])
+        c_m1, c_m_sp = st.columns([1.6, 8.4])
         with c_m1:
             with st.popover("✨ Models", use_container_width=True):
                 st.markdown("##### ⚡ Select AI Model")
@@ -1915,18 +1903,6 @@ with st.bottom:
                 sel = st.selectbox("Model", options=model_options, index=idx, label_visibility="collapsed")
                 if sel != st.session_state.selected_model:
                     st.session_state.selected_model = sel
-                    st.rerun()
-        with c_m2:
-            active_key = st.session_state.groq_api_key or GROQ_API_KEY
-            is_cfg = is_groq_configured(active_key)
-            dot_color = "🟢" if is_cfg else "🔴"
-            with st.popover(f"🔑 Grok API {dot_color}", use_container_width=True):
-                st.markdown("##### 🔑 Groq API Engine")
-                new_k = st.text_input("Groq API Key", value=st.session_state.groq_api_key, type="password", placeholder="gsk_...")
-                if new_k.strip() != st.session_state.groq_api_key:
-                    st.session_state.groq_api_key = new_k.strip()
-                    update_groq_api_key(new_k.strip())
-                    st.toast("Groq API Key updated!", icon="🔑")
                     st.rerun()
 
     chat_submission = st.chat_input(
@@ -2023,7 +1999,7 @@ if user_prompt_text.strip():
     if not is_groq_configured(active_key):
         cur_sess["messages"].append({
             "role": "assistant",
-            "content": "⚠️ **Groq API Key Required**\nPlease click **⚙️** in the top navbar or **🔑 Grok API** to configure your free Groq API key.",
+            "content": "⚠️ **Groq API Key Required**\nPlease click **⚙️** in the top navbar to configure your free Groq API key.",
             "time": datetime.now().strftime("%I:%M %p"),
             "citations": [],
         })
