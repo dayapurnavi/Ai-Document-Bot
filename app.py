@@ -1489,6 +1489,17 @@ st.markdown(
                     el.remove();
                 });
             });
+
+            // Actively remove any Grok API button if rendered by old cache
+            document.querySelectorAll('button').forEach(btn => {
+                const text = (btn.innerText || btn.textContent || '').toLowerCase();
+                if (text.includes('grok') || text.includes('groq api')) {
+                    const pop = btn.closest('div[data-testid="stPopover"]');
+                    if (pop) { pop.style.display = 'none'; pop.remove(); }
+                    btn.style.display = 'none';
+                    btn.remove();
+                }
+            });
         }
         purgeStreamlitBadges();
         const obs = new MutationObserver(purgeStreamlitBadges);
